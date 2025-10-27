@@ -34,3 +34,8 @@ The datasets contain the information about the local public transportation in th
 1. Download the datasets described above
 2. Place the unzipped datasets in the data folder in the root of the project
 3. Run the jupyter notebook to calculate the PTSQL.
+
+# License
+- Input data: Data License – Mobilitätsverbünde Österreich OG (License Agreement_DE_EN_DBP_v1.1), see `/data/in/`
+- Output data: CCBY 4.0 (Creative Commons Attribution 4.0 International), for everything in `/data/out/`
+- Source code: MIT License for everything in `/src/`
