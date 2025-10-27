@@ -31,3 +31,5 @@ GTFS stands for General Transit Feed Specification. It is a standard format intr
   - **route_id**: unique identifier of the route, shared with `trips.txt`
   - **route_type**: 0 - Tram, 1 - Subway, 2 - Rail, 3 - Bus, for more see https://gtfs.org/documentation/schedule/reference/#routestxt
 
+![Contents and relations of key files in GTFS dataset](GTFS-key-relations.png)
+©Bingyu Zhao
