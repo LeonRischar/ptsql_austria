@@ -210,4 +210,5 @@ __marimo__/
 .DS_Store
 
 # Data
-# /data/
+/data/in/2024*
+/data/in/GTFS*

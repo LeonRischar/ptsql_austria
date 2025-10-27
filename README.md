@@ -12,7 +12,9 @@
 This repo contains the code to calculate the PTSQL in Austria.
 
 # Structure
-- data/: contains the data in GTFS format for all of Austria
+- data/:
+  - in/: contains the original data in GTFS format for all of Austria (the data is NOT provided in this repo, refer to the dataset description for more information)
+  - out/: contains the generated output files
 - src/: contains the code to calculate the PTSQL
 - docs/: contains more detailed documentation
 
@@ -32,7 +34,7 @@ The datasets contain the information about the local public transportation in th
 
 # Usage
 1. Download the datasets described above
-2. Place the unzipped datasets in the data folder in the root of the project
+2. Place the unzipped datasets in the `/data/in/` folder
 3. Run the jupyter notebook to calculate the PTSQL.
 
 # License
