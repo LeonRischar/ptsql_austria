@@ -1,0 +1,225 @@
+import time
+import warnings
+
+warnings.filterwarnings("ignore")
+
+import pandas as pd
+import numpy as np
+
+import regex as re
+from datetime import datetime
+
+data_path = "../data/in/"
+output_path = "../data/out/"
+
+regions = {"vor": "20241214-0617_gtfs_vor_2024", #vienna, lower austria, burgenland
+           "ooevv": "20241212-0156_gtfs_ooevv_2024", #upper austria
+           "esg": "20241203-0058_gtfs_esg_2024", #linz
+           "verbundlinie": "20241217-0310_gtfs_verbundlinie_2024", #styria
+           "kaernterlinien": "20241214-0253_gtfs_kaerntnerlinien_2024", #carinthia
+           "salzburgverkehr": "20241217-0359_gtfs_salzburgverkehr_2024", #salzburg
+           "vvt": "20241217-0436_gtfs_vvt_2024", #tyrol
+           "vmobil": "20241212-0624_gtfs_vmobil_2024", #vorarlberg
+           "obb": "GTFS_2024_obb"} #oebb maybe 20241217-0222_gtfs_evu_2024
+
+# stop categories
+table_roman = np.array([
+    ["I", "I", "II", "III"],        # < 5 min
+    ["I", "II", "III", "III"],      # 5 >= x <= 10
+    ["II", "III", "IV", "IV"],      # 10 < x < 20
+    ["III", "IV", "V", "V"],        # 20 >= x < 40
+    ["IV", "V", "VI", "VI"],        # 40 >= x <= 60
+    ["V", "VI", "VII", "VII"],      # 60 < x <= 120  
+    ["X", "VII", "VIII", "VIII"],    # 120 < x <= 210 
+    ["X", "X", "X", "X"],               # > 210 
+                                    # X = empty, i.e. worst case
+])
+table = np.array([
+    [0, 0, 0, 0],        # < 5 min
+    [0, 1, 2, 2],        # 5 >= x <= 10
+    [1, 2, 3, 3],        # 10 < x < 20
+    [2, 3, 4, 4],        # 20 >= x < 40
+    [3, 4, 5, 5],        # 40 >= x <= 60
+    [4, 5, 6, 6],        # 60 < x <= 120  
+    [-1, 6, 7, 7],       # 120 < x <= 210 
+    [-1, -1, -1, -1],    # > 210
+])
+
+
+# transport_category = ["Fernverkehr REX", 
+#                       "S-Bahn / U-Bahn, Regionalbahn, Schnellbus, Lokalbahn", 
+#                       "Straßenbahn, Metrobus, 0-Bus", 
+#                       "Bus"]
+route_type_translation = {0: 2, 1: 1, 2: 0, 3: 3, 11: 3, 7: 3, 4: 3}
+
+def lookup_category(interval, t_cat):
+    """
+    Lookup the stop category based on the interval and the transport type.
+    """
+    if interval < 5:
+        return table[0][t_cat]
+    elif interval <= 10:
+        return table[1][t_cat]
+    elif interval < 20:
+        return table[2][t_cat]
+    elif interval < 40:
+        return table[3][t_cat]
+    elif interval <= 60:
+        return table[4][t_cat]
+    elif interval <= 120:
+        return table[5][t_cat]
+    elif interval <= 210:
+        return table[6][t_cat]
+    else:
+        return table[7][t_cat]
+    
+def category_to_roman(t_cat, reverse=False):
+    """
+    Convert a category to a roman numeral or vice versa if reverse is True
+    """
+    roman_numerals = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "X"]
+    if reverse:
+        return roman_numerals.index(t_cat)
+    return roman_numerals[t_cat]
+    
+def detect_route_type(trip_name, route_type):
+    """
+    Detect the type of transportation based on the trip name and the route type
+    By default, the transport type is only based on the route type.
+    For route type 2 (train), the trip_name is used, to further distinguish between different trains, if available.
+    """
+    # TODO: also consider route_short/long_name ??? 
+    if route_type == 2 and not pd.isna(trip_name):
+        trips_name = trip_name.lower()
+        if any(x in trips_name for x in ["rj", "rjx", "nj", "en", "ic", "ec", "ice", "ecb", "rex"]): #fernverkehr
+            return 0
+        else:
+            return 1
+    else:
+        return route_type_translation[route_type]
+
+def calculate_rank_interval_for_region(state_name, selected_day) -> pd.DataFrame:
+    #----- 1. load data -----#
+    path = f"{data_path}/{regions[state_name]}/"
+
+    stops = pd.read_csv(path + "/stops.txt", quotechar='"', sep=",")
+    stop_times = pd.read_csv(path + "/stop_times.txt", quotechar='"', sep=",")
+    trips = pd.read_csv(path + "/trips.txt", quotechar='"', sep=",")
+    routes = pd.read_csv(path + "/routes.txt", quotechar='"', sep=",")
+    calendar = pd.read_csv(path + "/calendar.txt", quotechar='"', sep=",")
+    calendar_dates = pd.read_csv(path + "/calendar_dates.txt", quotechar='"', sep=",")
+
+    #----- 2. filter calendar and calendar_dates -----# 
+    calendar_filtered = calendar[(calendar['start_date'] <= selected_day) & (calendar['end_date'] >= selected_day)]
+    calendar_dates_filtered = calendar_dates[calendar_dates["date"] == selected_day]
+
+    # find weekday of selected day
+    days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    date = datetime.fromisoformat(str(selected_day))
+    day_string = days[date.weekday()]
+
+    # only keep services that run on that weekday
+    calendar_filtered = calendar_filtered[calendar_filtered[day_string] == 1]
+
+    #----- 3. filter to keep only valid trips -----#
+    trips_filtered = trips[trips['service_id'].isin(calendar_filtered['service_id'])]
+
+    trips_filtered = trips_filtered[trips_filtered["service_id"].isin(calendar_dates_filtered[calendar_dates_filtered["exception_type"] == 2]["service_id"])]
+
+    trips_full = pd.concat([trips_filtered, trips[trips["service_id"].isin(calendar_dates_filtered[calendar_dates_filtered["exception_type"]==1]["service_id"])]])
+
+    #----- 4. merge trips and routes-----#
+    # merge trips with routes information
+    routes_trips = pd.merge(trips_full, routes, on='route_id', how='left')
+
+    # translate route type
+    routes_trips['trip_short_name'] = routes_trips['trip_short_name'].astype('str')
+    routes_trips['rank'] = routes_trips.apply(lambda x: detect_route_type(x['trip_short_name'], x['route_type']), axis=1)
+
+    #----- 5. prepare stops and stop_times -----#
+    stops_filtered = stops.copy()
+    stops_filtered['stop_id'] = stops_filtered['stop_id'].astype(str).apply(
+        lambda x: (
+            re.match(r'^((?:[^:]*:){3})', x).group(1).rstrip(':')
+            if re.match(r'^((?:[^:]*:){3})', x)
+            else x
+        )
+    )
+    # keep only stop entry for parent station, if no parent station is given, keep a stop entry
+    stops_parents = stops_filtered[stops_filtered['stop_id'].str.startswith('Pat')].copy()
+    stops_parents['stop_id'] = stops_parents['stop_id'].apply(lambda x: x if x[0] != 'P' else x[1:])
+    stops_filtered = stops_filtered[stops_filtered['stop_id'].str.startswith('at')]
+    stops_filtered = stops_filtered[~stops_filtered['stop_id'].isin(stops_parents['stop_id'])].drop_duplicates(subset=['stop_id'], keep='first')
+    # TODO: maybe filter out special stations e.g. obb_CP_80854 Wattens Sammelpunkt Bahnhofstraße MPREIS or Pat:42:99979_HoB
+    stops_filtered_final = pd.concat([stops_parents, stops_filtered])
+
+    stop_times_filtered = stop_times.copy()
+    stop_times_filtered = stop_times_filtered[stop_times_filtered['departure_time'].between('06:00:00', '20:00:00')]
+    stop_times_filtered = stop_times_filtered[stop_times_filtered['stop_id'].str.startswith('at')]
+    # TODO: check if Parent station is in stop_times and keep those
+    stop_times_filtered['stop_id'] = stop_times_filtered['stop_id'].astype(str).apply(
+        lambda x: (
+            re.match(r'^((?:[^:]*:){3})', x).group(1).rstrip(':')
+            if re.match(r'^((?:[^:]*:){3})', x)
+            else x
+        )
+    )
+
+    #----- 6. add trip and route information to stop_times -----#
+    stop_times_trips = pd.merge(stop_times_filtered, routes_trips, on='trip_id', how='inner')
+
+    #----- 7. calculate rank intervals -----#
+    stop_times_grouped = stop_times_trips.groupby(['stop_id']).agg(rank=("rank", "min"), count=("rank", "count")).reset_index()
+
+    # TODO: maybe after merge with obb stations
+    # stop_times_grouped["interval"] = stop_times_grouped["count"].apply(lambda x: 840 / (x/2))
+    # stop_times_grouped["category"] = stop_times_grouped.apply(lambda x: lookup_category(x["interval"], x["rank"]), axis=1)
+
+    #----- 8. merge wiht stops and kepp only needed columns -----#
+    # TODO: change "how" to "left" to include all stops, also ones without rank and count (nan)
+    stops_final = pd.merge(stops_filtered_final.drop(['zone_id', 'location_type', 'level_id', 'platform_code', 'parent_station'], axis=1), stop_times_grouped, on='stop_id', how='inner')
+
+    return stops_final
+
+def calculate_rank_interval_for_all_regions(selected_day):
+    state_dfs = []
+    total_time = 0
+    #selected_regions = ["vor", "obb", "vmobil", "esg", "verbundlinie", "kaernterlinien", "salzburgverkehr", "vvt", "ooevv"]
+
+    print(f"Calculating regions: ")
+    for state_name in regions.keys():
+        print(f"{state_name}", end="\r")
+        start_time = time.time()
+        
+        state_dfs.append(calculate_rank_interval_for_region(state_name, selected_day))
+
+        elapsed = time.time() - start_time
+        total_time += elapsed
+        print(f"{state_name:<20} {elapsed:.3f}s")
+
+    print(f"Total time: {total_time:.3f}s")
+
+    # merge all state dfs
+    all_regions = pd.concat(state_dfs)
+    agg = all_regions.groupby(['stop_id']).agg(rank=("rank", "min"), count=("count", "sum")).reset_index()
+
+    # all_regions = pd.merge(agg, all_regions[['stop_id', 'stop_name', 'stop_lat', 'stop_lon']], on='stop_id', how='left')
+    all_regions = pd.merge(all_regions[['stop_id', 'stop_name', 'stop_lat', 'stop_lon']], agg, on='stop_id', how='right')
+
+    # calculate intervals and station categories
+    all_regions["interval"] = all_regions["count"].apply(lambda x: 840 / (x/2))
+    all_regions["category"] = all_regions.apply(lambda x: lookup_category(x["interval"], x["rank"]), axis=1)
+
+    # drop duplicates arising slightly different coords for same stop
+    all_regions = all_regions.drop_duplicates(subset=['stop_id'], keep='first')
+
+    # print infos
+    print(f"Number of stops: {len(all_regions)}")
+
+    # save to file
+    f_name = f"all_regions_{selected_day}.csv"
+    all_regions.to_csv(output_path + f_name, index=False)
+    print(f"\nSaved to {output_path + f_name}")
+
+if __name__ == "__main__":
+    calculate_rank_interval_for_all_regions(20240530)
