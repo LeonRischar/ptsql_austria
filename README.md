@@ -9,7 +9,7 @@
 - add requirements.txt
   
 # Description
-This repo contains the code to calculate the PTSQL in Austria.
+This project contains the code to calculate the Public Transport Service Quality Levels (PTSQL) for Austria.
 
 # Structure
 - data/:
@@ -38,6 +38,7 @@ The datasets contain the information about the local public transportation in th
 3. Run the jupyter notebook to calculate the PTSQL.
 
 # License
-- Input data: Data License – Mobilitätsverbünde Österreich OG (License Agreement_DE_EN_DBP_v1.1), see `/data/in/`
-- Output data: CCBY 4.0 (Creative Commons Attribution 4.0 International), for everything in `/data/out/`
-- Source code: MIT License for everything in `/src/`
+Please not that there are different licenses for different parts of this project:
+- Input data: **Data License – Mobilitätsverbünde Österreich OG (License Agreement_DE_EN_DBP_v1.1)**, see `/data/in/`
+- Output data: **Creative Commons Attribution 4.0 International** for everything in `/data/out/`
+- Source code: **MIT License** for everything in `/src/` and documentation in `/docs/` as well as the rest of the project
