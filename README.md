@@ -1,4 +1,4 @@
-# ptsql
+# ptsql_austria_calculator
 
 ## TODO:
 - add Licence
@@ -12,11 +12,14 @@
 This project contains the code to calculate the Public Transport Service Quality Levels (PTSQL) for Austria.
 
 # Structure
-- data/:
-  - in/: contains the original data in GTFS format for all of Austria (the data is NOT provided in this repo, refer to the dataset description for more information)
-  - out/: contains the generated output files
-- src/: contains the code to calculate the PTSQL
-- docs/: contains more detailed documentation
+```
+ptsql_austria/
+├── data/:
+    ├── in/: contains the original data in GTFS format for all of Austria (the data is NOT provided in this repo, refer to the dataset description for more information)
+    ├── out/: contains the generated output files
+├── src/: contains the code to calculate the PTSQL
+├── docs/: contains more detailed documentation
+```
 
 # Dataset
 The data used is from https://data.mobilitaetsverbuende.at/en/data-sets. Specifically, the GTFS data for the year 2024 is used. It is necessary to download the datasets for each region (almost like states) separately. 
@@ -31,6 +34,13 @@ The region are:
 - Vorarlberg (VMOBIL) contains Vorarlberg
 The datasets contain the information about the local public transportation in the respective region. Data for the national railway (OEBB) is not included and must downloaded separately.
 - Austria (OEBB) contains the national railway (Railway Timetable Data (GTFS) - Reference Data for Timetable Changeover)
+
+# Requirements
+See `requirements.txt` for the required python packages.
+The `requirements.txt` was generated using `pipreqs` with the following command:
+```
+  pipreqs --scan-notebooks --force --savepath ./requirements.txt ./src/
+```
 
 # Usage
 1. Download the datasets described above
