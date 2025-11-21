@@ -50,7 +50,7 @@ table = np.array([
 #                       "S-Bahn / U-Bahn, Regionalbahn, Schnellbus, Lokalbahn", 
 #                       "Straßenbahn, Metrobus, 0-Bus", 
 #                       "Bus"]
-route_type_translation = {0: 2, 1: 1, 2: 0, 3: 3, 11: 3, 7: 3, 4: 3}
+route_type_translation = {0: 2, 1: 1, 2: 0, 3: 3, 11: 3,} #7: 3, 4: 3
 
 def lookup_category(interval, t_cat):
     """
@@ -91,7 +91,7 @@ def detect_route_type(trip_name, route_type):
     # TODO: also consider route_short/long_name ??? 
     if route_type == 2 and not pd.isna(trip_name):
         trips_name = trip_name.lower()
-        if any(x in trips_name for x in ["rj", "rjx", "nj", "en", "ic", "ec", "ice", "ecb", "rex"]): #fernverkehr
+        if any(x in trips_name for x in ["rj", "rjx", "nj", "en", "ic", "ec", "ice", "ecb", "rex", "wb", "rgj", "cjx" ]): #fernverkehr
             return 0
         else:
             return 1
@@ -110,27 +110,31 @@ def calculate_rank_interval_for_region(state_name, selected_day) -> pd.DataFrame
     calendar_dates = pd.read_csv(path + "/calendar_dates.txt", quotechar='"', sep=",")
 
     #----- 2. filter calendar and calendar_dates -----# 
-    calendar_filtered = calendar[(calendar['start_date'] <= selected_day) & (calendar['end_date'] >= selected_day)]
-    calendar_dates_filtered = calendar_dates[calendar_dates["date"] == selected_day]
-
     # find weekday of selected day
-    days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
     date = datetime.fromisoformat(str(selected_day))
-    day_string = days[date.weekday()]
+    day_string = date.strftime("%A").lower()
 
-    # only keep services that run on that weekday
-    calendar_filtered = calendar_filtered[calendar_filtered[day_string] == 1]
+    # only keep services that run on the selected day and weekday
+    calendar_filtered = calendar[(calendar['start_date'] <= selected_day) & (calendar['end_date'] >= selected_day) & (calendar[day_string] == 1)].copy()
+    
+    # select services from exceptions
+    added_service = calendar_dates[(calendar_dates['date'] == selected_day) & (calendar_dates['exception_type'] == 1)]
+    removed_service = calendar_dates[(calendar_dates['date'] == selected_day) & (calendar_dates['exception_type'] == 2)]
 
     #----- 3. filter to keep only valid trips -----#
     trips_filtered = trips[trips['service_id'].isin(calendar_filtered['service_id'])]
 
-    trips_filtered = trips_filtered[trips_filtered["service_id"].isin(calendar_dates_filtered[calendar_dates_filtered["exception_type"] == 2]["service_id"])]
+    # remove services with exception_type = 2 from calendar_dates
+    trips_filtered = trips_filtered[~trips_filtered["service_id"].isin(removed_service["service_id"])]
 
-    trips_full = pd.concat([trips_filtered, trips[trips["service_id"].isin(calendar_dates_filtered[calendar_dates_filtered["exception_type"]==1]["service_id"])]])
+    # add services with exception_type = 1 from calendar_dates
+    trips_full = pd.concat([trips_filtered, trips[trips["service_id"].isin(added_service["service_id"])]])
 
     #----- 4. merge trips and routes-----#
     # merge trips with routes information
     routes_trips = pd.merge(trips_full, routes, on='route_id', how='left')
+
+    routes_trips = routes_trips[routes_trips['route_type'].isin(route_type_translation.keys())]
 
     # translate route type
     routes_trips['trip_short_name'] = routes_trips['trip_short_name'].astype('str')
@@ -148,7 +152,7 @@ def calculate_rank_interval_for_region(state_name, selected_day) -> pd.DataFrame
     # keep only stop entry for parent station, if no parent station is given, keep a stop entry
     stops_parents = stops_filtered[stops_filtered['stop_id'].str.startswith('Pat')].copy()
     stops_parents['stop_id'] = stops_parents['stop_id'].apply(lambda x: x if x[0] != 'P' else x[1:])
-    stops_filtered = stops_filtered[stops_filtered['stop_id'].str.startswith('at')]
+    stops_filtered = stops_filtered[stops_filtered['stop_id'].str.startswith('at') | stops_filtered['stop_id'].str.startswith('obb')]
     stops_filtered = stops_filtered[~stops_filtered['stop_id'].isin(stops_parents['stop_id'])].drop_duplicates(subset=['stop_id'], keep='first')
     # TODO: maybe filter out special stations e.g. obb_CP_80854 Wattens Sammelpunkt Bahnhofstraße MPREIS or Pat:42:99979_HoB
     stops_filtered_final = pd.concat([stops_parents, stops_filtered])
@@ -169,7 +173,7 @@ def calculate_rank_interval_for_region(state_name, selected_day) -> pd.DataFrame
     stop_times_trips = pd.merge(stop_times_filtered, routes_trips, on='trip_id', how='inner')
 
     #----- 7. calculate rank intervals -----#
-    stop_times_grouped = stop_times_trips.groupby(['stop_id']).agg(rank=("rank", "min"), count=("rank", "count")).reset_index()
+    stop_times_grouped = stop_times_trips.groupby(['stop_id']).agg(rank=("rank", "min"), count=("rank", "count")).reset_index().copy()
 
     # TODO: maybe after merge with obb stations
     # stop_times_grouped["interval"] = stop_times_grouped["count"].apply(lambda x: 840 / (x/2))
@@ -181,10 +185,12 @@ def calculate_rank_interval_for_region(state_name, selected_day) -> pd.DataFrame
 
     return stops_final
 
+def wrapper(args):
+    return calculate_rank_interval_for_region(*args)
+
 def calculate_rank_interval_for_all_regions(selected_day):
     state_dfs = []
     total_time = 0
-    #selected_regions = ["vor", "obb", "vmobil", "esg", "verbundlinie", "kaernterlinien", "salzburgverkehr", "vvt", "ooevv"]
 
     print(f"Calculating regions: ")
     for state_name in regions.keys():
@@ -197,6 +203,7 @@ def calculate_rank_interval_for_all_regions(selected_day):
         total_time += elapsed
         print(f"{state_name:<20} {elapsed:.3f}s")
 
+
     print(f"Total time: {total_time:.3f}s")
 
     # merge all state dfs
@@ -207,7 +214,7 @@ def calculate_rank_interval_for_all_regions(selected_day):
     all_regions = pd.merge(all_regions[['stop_id', 'stop_name', 'stop_lat', 'stop_lon']], agg, on='stop_id', how='right')
 
     # calculate intervals and station categories
-    all_regions["interval"] = all_regions["count"].apply(lambda x: 840 / (x/2))
+    all_regions["interval"] = all_regions["count"].apply(lambda x: 840 / (x/2) if x != 0 else 1680)
     all_regions["category"] = all_regions.apply(lambda x: lookup_category(x["interval"], x["rank"]), axis=1)
 
     # drop duplicates arising slightly different coords for same stop
@@ -222,4 +229,4 @@ def calculate_rank_interval_for_all_regions(selected_day):
     print(f"\nSaved to {output_path + f_name}")
 
 if __name__ == "__main__":
-    calculate_rank_interval_for_all_regions(20240530)
+    calculate_rank_interval_for_all_regions(20240528)
