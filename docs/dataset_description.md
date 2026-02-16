@@ -10,7 +10,7 @@ GTFS stands for General Transit Feed Specification. It is a standard format intr
   - **stop_id**: unique identifier of the stop, shared with `stop_times.txt`
   - **stop_name**: humnan-readable name of the stop
   - **parent_station**: identifier of the parent station, to group stops into stations, e.g. bus stop is at a different location than the metro stop but belong to the same station
-  - **stop_lat**, **stop_lon**: the latitude and longitude of the stop
+  - **stop_lat**, **stop_lon**: the latitude and longitude of the stop, these coordinates are in decimal degrees i.e. WGS84 or ESPG:4326
 - `stop_times.txt`: contains the schedule of the public transportation system
   - **stop_id**: unique identifier of the stop, shared with `stops.txt`
   - **trip_id**: unique identifier of the trip, shared with `trips.txt`

@@ -162,6 +162,7 @@ cython_debug/
 # Data
 /data/in/2024*
 /data/in/GTFS*
+/data/in/osmnx_graphs/
 
 # OSMnx
 /src/cache/

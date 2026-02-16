@@ -14,11 +14,11 @@ This project contains the code to calculate the Public Transport Service Quality
 # Structure
 ```
 ptsql_austria/
-├── data/:
-    ├── in/: contains the original data in GTFS format for all of Austria (the data is NOT provided in this repo, refer to the dataset description for more information)
-    ├── out/: contains the generated output files
-├── src/: contains the code to calculate the PTSQL
-├── docs/: contains more detailed documentation
+├── data/
+│   ├── in/   # contains the original data in GTFS format for all of Austria (the data is NOT provided in this repo, refer to the dataset description for more information)
+│   └── out/  # contains the generated output files
+├── src/      # contains the code to calculate the PTSQL
+└── docs/     # contains more detailed documentation
 ```
 
 # Dataset
