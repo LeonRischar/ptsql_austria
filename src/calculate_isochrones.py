@@ -1,14 +1,21 @@
+from functools import partial
+import math
 import os
+import pickle
+import time
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import networkx as nx
 import osmnx as ox
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import Point
 
 from pyproj import Transformer 
 
 import pandas as pd
 import numpy as np
+
+from multiprocessing import Pool, TimeoutError
+from itertools import repeat
 
 # settings, default constants
 
@@ -66,6 +73,27 @@ def assign_color(category, distance):
     else:
         return -1
     
+def create_name(place):
+    """
+    Create a name for the graph and output files. Also used to find existing graphs.
+
+    Parameters:
+        place (dict | list[dict]): The place to create the name for.
+
+    Returns:    
+        str: The name for the graph and output files.
+    """
+
+    name = ""
+    if place == PLACES:
+        name = "all_regions"
+    elif isinstance(place, list):
+        "_".join([p.get('state', p.get('city', "")) for p in place])
+    else:
+        name += place.get('state', place.get('city', ""))
+
+    return name
+    
 def draw_graph(G, ns=0, nc="none", gdf=None, return_fig=False):
     """
     Draw the graph with the specified node sizes and node colors.
@@ -101,7 +129,7 @@ def draw_graph(G, ns=0, nc="none", gdf=None, return_fig=False):
         return fig, ax
     
 
-def load_graph(places: list[dict], network_type: str = NETWORK_TYPE, union: bool = False, crs: str = TARGET_CRS) -> list[nx.Graph] | nx.Graph:
+def load_graph(places: list[dict] | dict, network_type: str = NETWORK_TYPE, union: bool = True, crs: str = TARGET_CRS, save: bool = True) -> list[nx.Graph] | nx.Graph:
     """
     Load the graph of the specified places from the data folder.
     Or download the graph from OSM if it does not exist.
@@ -109,34 +137,53 @@ def load_graph(places: list[dict], network_type: str = NETWORK_TYPE, union: bool
     Parameters:
         places (list[dict]): A list of dictionaries containing the place information.
         network_type (str): The network type to use for the graph. Defaults to "walk".
-        union (bool): If True, union the graphs of the places. Defaults to False.
+        union (bool): If True, combine the graphs of the places to one graph. Defaults to True.
+        crs (str): The CRS to project the graph to. Defaults to TARGET_CRS.
+        save (bool): If True, save the graph(s) to the data folder. Defaults to True.
 
     Returns:
         list[nx.Graph] or nx.Graph: A list of graphs if union is False, otherwise a single graph.
     """
 
-    #data_path = "../data/in/osmnx_graphs/"
-    #ox.save_graphml(G, f"{data_path}/graph_{place.split(',')[0]}.graphml")
-    #ox.save_graphml(G, f"{data_path}/graph_{place["state"]}.graphml")
-
     graphs = []
 
+    if not isinstance(places, list):
+        places = [places]
+
+    #name = create_name(places)
+
     for place in places:
-        name = place.get("state", place.get("city"))
+        n = place.get("state", place.get("city", ""))
 
-        if os.path.exists(f"{PATH_GRAPHS_IN}/graph_{name}.graphml"):
-            G = ox.load_graphml(f"{PATH_GRAPHS_IN}/graph_{name}.graphml")
+        if os.path.exists(f"{PATH_GRAPHS_IN}graph_{n}.pkl"):
+            #G = ox.load_graphml(f"{PATH_GRAPHS_IN}/graph_{n}.graphml")
+            print(f"Loading existing graph for {n}" + ' '*20, end="\r")
+            with open(f"{PATH_GRAPHS_IN}graph_{n}.pkl", "rb") as f:
+                G = pickle.load(f)
         else:
+            print(f"Downloading graph for {n}" + ' '*20, end="\r")
             G = ox.graph_from_place(place, network_type=network_type)
-            ox.save_graphml(G, f"{PATH_GRAPHS_IN}/graph_{name}.graphml")
+            #ox.save_graphml(G, f"{PATH_GRAPHS_IN}/graph_{n}.graphml")
+            if save:
+                with open(f"{PATH_GRAPHS_IN}graph_{n}.pkl", "wb") as f:
+                    pickle.dump(G, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-        G = ox.projection.project_graph(G, to_crs=crs)
         graphs.append(G)
 
     if union:
-        return nx.union_all(graphs)
+        print(f"Combining graphs" + ' '*20, end="\r")
+        g = nx.compose_all(graphs)
 
-    return graphs
+        g = ox.projection.project_graph(g, to_crs=crs)
+        return g
+    
+    graphs = [ox.projection.project_graph(g, to_crs=crs) for g in graphs]
+    
+    if len(graphs) == 1:
+        return graphs[0]
+    else:
+        return graphs
+
 
 def load_stops(regions: list[str] = ["all_regions"], day: int = 20240528, crs: str = TARGET_CRS) -> pd.DataFrame:
     """
@@ -156,6 +203,7 @@ def load_stops(regions: list[str] = ["all_regions"], day: int = 20240528, crs: s
         dfs.append(pd.read_csv(f"{PATH_STOPS_IN}{region}_{day}.csv"))
 
     df = pd.concat(dfs)
+    df.drop_duplicates(subset=["stop_id"], inplace=True)
 
     transformer = Transformer.from_crs(SOURCE_CRS, crs, always_xy=True)
     df["x"], df["y"] = transformer.transform(df["stop_lon"].values, df["stop_lat"].values)
@@ -163,7 +211,7 @@ def load_stops(regions: list[str] = ["all_regions"], day: int = 20240528, crs: s
     return df
 
 
-def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=1) -> gpd.GeoDataFrame:
+def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=25) -> gpd.GeoDataFrame:
     """
     Calculate the isochrones for the specified distances.
     
@@ -205,14 +253,19 @@ def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=1
         prev_d = 0
         # for each distance, select all nodes in the distance band
         for d in distances:
+            color = PTSQL_COLORS[assign_color(cat, d)]
+            if color == "none": #skip black areas
+                break #skip entire loop for this node since there are no colored isos left
+
             ring_nodes = [ Point((G.nodes[n]["x"], G.nodes[n]["y"])) for n, dist in lengths.items() if prev_d < dist <= d ]
 
             if ring_nodes:
-                poly = gpd.GeoSeries(ring_nodes).union_all().convex_hull.buffer(1)
+                poly = gpd.GeoSeries(ring_nodes).union_all().convex_hull.buffer(buffer)
+
                 records.append({
                     "center": cn,
                     "distance": d,
-                    "color": PTSQL_COLORS[assign_color(cat, d)],
+                    "color": color,
                     "geometry": poly
                 })
 
@@ -226,28 +279,124 @@ def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=1
 
     return gdf
  
+def calculate_batch_isochrones(places, regions, days):
+    """
+    Calculate the isochrones for all the specified places and regions each day seprately in parallel.
+    Can also be used for a single day.
+    Note: places (graphs) and regions (stops) match i.e. contain the information relevant stops in the regions for the day(s).
+    
+    Parameters:
+        places (list[dict] | dict): A list of dictionaries containing the place information or a single dictionary.
+        regions (list[str]): A list of names regions stop files to calculate the isochrones for.
+        days (list[int]): A list of days to calculate the isochrones for.
+    """
 
-if __name__ == "__main__":
-    day = 20240528
-    place = {"city": "Bregenz", "country": "Austria"}
-    region = "vmobil_obb"
+    name = create_name(places)
 
-    stops = load_stops([region], day)
-    G = load_graph([place])
+    print(f"Calculating isochrones for batch (multiple days)")
+    start_time = time.time()
 
-    G = G[0] if len(G) == 1 else G
+    print(f"Loading graphs for {name}", end="\r")
+    graph = load_graph(places)
+    load_graph_time = time.time()
+    print(f"Loaded graphs for {name} ..... {load_graph_time - start_time:.3f}s")
+    print("--------------")
 
+    for d in days:
+        print(f"Calculating day {d}")
+        time_before = time.time()
+        
+        print(f"Loading stops for {", ".join(regions)}", end="\r")
+        stops = load_stops(regions, d)
+        load_stops_time = time.time()
+        print(f"Loaded stops for {", ".join(regions)} ..... {load_stops_time - time_before:.3f}s")
+        
+        print(f"Calculating isochrones for day {d}", end="\r")
+        isochrones = calculate_isochrones(graph, stops)
+        isochrones_time = time.time()
+        print(f"Calculated isochrones for day {d} ..... {isochrones_time - load_stops_time:.3f}s")
+
+        n = name + "_" + str(d)
+        print(f"Saving isochrones to {PATH_ISOCHRONES_OUT}{n}.gpkg", end="\r")
+        isochrones.to_file(f"{PATH_ISOCHRONES_OUT}{n}.gpkg", layer="isochrones", driver="GPKG")
+        save_time = time.time()
+        print(f"Saved isochrones to {PATH_ISOCHRONES_OUT}{n}.gpkg ..... {save_time - isochrones_time:.3f}s")
+        print("--------------")
+
+
+    #print(f"Finished calculation in {save_time - start_time:.3f}s\n\n")
+
+    # TODO: add plot creation?? with higher resolution??
+    # print(f"Drawing isochrones plot", end="\r")
+    # fig, ax = draw_graph(graph, gdf=gdf, return_fig=True)
+    # draw_time = time.time()
+    # print(f"{"Drawn isochrones plot"} ..... {draw_time - isochrones_time:.3f}s")
+    
+    # print(f"Saving isochrones to {PATH_ISOCHRONES_OUT}{name}.gpkg and figure to {PATH_FIGS_OUT}{name}.png", end="\r")
+    # isochrones.to_file(f"{PATH_ISOCHRONES_OUT}{name}.gpkg", layer="isochrones", driver="GPKG")
+    # fig.savefig(f"{PATH_FIGS_OUT}{name}.png")
+    # save_time = time.time()
+    # print(f"Saved isochrones to {PATH_ISOCHRONES_OUT}{name}.gpkg and figure to {PATH_FIGS_OUT}{name}.png ..... {save_time - draw_time:.3f}s")
+
+    # plt.figure(fig)
+    # plt.show()
+
+def run_calculation(place, region, day):
+    start_time = time.time()
+
+    print(f"Loading stops for {", ".join(region)}", end="\r")
+    stops = load_stops(region, day)
+
+    load_stops_time = time.time()
+    print(f"Loaded stops for {", ".join(region)} ..... {load_stops_time - start_time:.3f}s")
+
+    print(f"Loading graphs for {", ".join([p.get('state', p.get('city', "")) for p in place])}", end="\r")
+    G = load_graph(place, save=True)
+    load_graph_time = time.time()
+    print(f"Loaded graphs for {", ".join([p.get('state', p.get('city', "")) for p in place])} ..... {load_graph_time - load_stops_time:.3f}s")
+
+    #G = G[0] if len(G) == 1 else G
+
+    print(f"Calculating isochrones", end="\r")
     isochrones = calculate_isochrones(G, stops)
+    isochrones_time = time.time()
+    print(f"{"Calculated isochrones"} ..... {isochrones_time - load_graph_time:.3f}s")
 
-    print(isochrones)
+    #print(isochrones)
 
     # draw
+    print(f"Drawing isochrones plot", end="\r")
     fig, ax = draw_graph(G, gdf=isochrones, return_fig=True)
+    draw_time = time.time()
+    print(f"{"Drawn isochrones plot"} ..... {draw_time - isochrones_time:.3f}s")
 
-    name = f"{place.get('state', place.get('city'))}_{day}"
+    name = create_name(place, simplify=simplify)
+    name += "_" + str(day)
 
+    print(f"Saving isochrones to {PATH_ISOCHRONES_OUT}{name}.gpkg and figure to {PATH_FIGS_OUT}{name}.png", end="\r")
     isochrones.to_file(f"{PATH_ISOCHRONES_OUT}{name}.gpkg", layer="isochrones", driver="GPKG")
     fig.savefig(f"{PATH_FIGS_OUT}{name}.png")
+    save_time = time.time()
+    print(f"Saved isochrones to {PATH_ISOCHRONES_OUT}{name}.gpkg and figure to {PATH_FIGS_OUT}{name}.png ..... {save_time - draw_time:.3f}s")
 
+    print(f"Finished calculation in {save_time - start_time:.3f}s\n\n")
     plt.figure(fig)
     plt.show()
+
+if __name__ == "__main__":
+    #day = 20240528
+    
+    # region name for street network graph, e.g. {"city": "Vienna", "country": "Austria"}, 
+    # use key "city" only for Vienna else "state", see top of file for list of regions
+    #place = [{"state": "Tyrol", "country": "Austria"}, {"state": "Vorarlberg", "country": "Austria"}]
+
+    # name of dfs in stops_dfs folder before "_{day}" e.g. "vor_obb"
+    #region = ["vor_obb"]
+    #region = ["vvt_vmobil_obb"]
+
+    # batch calculation for multiple days
+    places = PLACES
+    regions = ["all_regions"]
+    days = [20241023, 20241030]
+
+    calculate_batch_isochrones(PLACES, ["all_regions"], days)

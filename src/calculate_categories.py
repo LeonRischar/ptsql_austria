@@ -10,7 +10,7 @@ import regex as re
 from datetime import datetime
 
 PATH_IN = "../data/in/"
-PATH_OUT = "../data/out/"
+PATH_OUT = "../data/out/stop_dfs/"
 
 REGIONS = {"vor": "20241214-0617_gtfs_vor_2024", #vienna, lower austria, burgenland
            "ooevv": "20241212-0156_gtfs_ooevv_2024", #upper austria
@@ -141,6 +141,10 @@ def calculate_rank_interval_for_region(state_name: str, selected_day: int) -> pd
     # add services with exception_type = 1 from calendar_dates
     trips_full = pd.concat([trips_filtered, trips[trips["service_id"].isin(added_service["service_id"])]])
 
+    if trips_full.shape[0] == 0:
+        print(f"No trips found for {state_name} on {selected_day}! Either no service is running on this day or the input data is incomplete/incorrect.")
+        return pd.DataFrame()
+
     #----- 4. merge trips and routes-----#
     # merge trips with routes information
     routes_trips = pd.merge(trips_full, routes, on='route_id', how='left')
@@ -250,12 +254,22 @@ def calculate_rank_interval_for_all_regions(selected_day: int, selected_regions:
     print(f"Number of stops: {len(all_regions)}")
 
     # save to file
-    f_name = f"all_regions_{selected_day}.csv" if selected_regions is None else f"{'_'.join(selected_regions)}_{selected_day}.csv"
+    f_name = f"all_regions_{selected_day}.csv" if selected_regions == list(REGIONS.keys()) else f"{'_'.join(selected_regions)}_{selected_day}.csv"
     all_regions.to_csv(PATH_OUT + f_name, index=False)
     print(f"\nSaved to {PATH_OUT + f_name}")
 
 if __name__ == "__main__":
-    day = 20240528
-    regions = ["vor", "obb"]
+    # day = 20240115
+    # regions = []
 
-    calculate_rank_interval_for_all_regions(day, regions)
+    # calculate_rank_interval_for_all_regions(day)
+
+    # batch calculation for multiple days
+    #day = 20240010 # 10th of each month
+    for d in [20241023, 20241030]: #every 2nd month
+        #d = day + i
+        print(f"Calculating categories for day {d}")
+
+        calculate_rank_interval_for_all_regions(d)
+
+        print("--------------\n")

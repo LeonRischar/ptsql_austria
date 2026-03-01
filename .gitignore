@@ -164,5 +164,11 @@ cython_debug/
 /data/in/GTFS*
 /data/in/osmnx_graphs/
 
+/data/out/isochrones_gpkg/
+/data/out/stop_dfs/
+
+#src
+/src/test*
+
 # OSMnx
 /src/cache/
