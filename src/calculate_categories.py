@@ -259,17 +259,13 @@ def calculate_rank_interval_for_all_regions(selected_day: int, selected_regions:
     print(f"\nSaved to {PATH_OUT + f_name}")
 
 if __name__ == "__main__":
-    # day = 20240115
-    # regions = []
-
-    # calculate_rank_interval_for_all_regions(day)
+    days = [20241023, 20241030]
+    regions = []
 
     # batch calculation for multiple days
-    #day = 20240010 # 10th of each month
-    for d in [20241023, 20241030]: #every 2nd month
-        #d = day + i
+    for d in days:
         print(f"Calculating categories for day {d}")
 
-        calculate_rank_interval_for_all_regions(d)
+        calculate_rank_interval_for_all_regions(d, regions)
 
         print("--------------\n")

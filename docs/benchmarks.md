@@ -1,5 +1,18 @@
 # Benchmarks
 
+## Times for loading and combining graphs (combining with new graph, not compose):
+```
+Calculating isochrones for batch (multiple days)
+Combined graphs in 39.479s                                  
+Loaded graphs for all_regions ..... 245.559s
+```
+## Times for loading and combining graphs (combining with compose):
+```
+Calculating isochrones for batch (multiple days)
+Combined graphs in 29.047s                                  
+Loaded graphs for all_regions ..... 234.813s
+```
+
 ## Times for VOR region:
 ```
   Loaded stops for vor_obb ..... 0.022s
