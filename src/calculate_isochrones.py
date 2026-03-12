@@ -1,4 +1,3 @@
-from functools import partial
 import math
 import os
 import pickle
@@ -14,9 +13,6 @@ from pyproj import Transformer
 import pandas as pd
 import numpy as np
 
-from multiprocessing import Pool, TimeoutError
-from itertools import repeat
-
 # settings, default constants
 
 SOURCE_CRS = "epsg:4326"
@@ -30,6 +26,7 @@ PLACES = [{"city": "Vienna", "country": "Austria"},
           {"state": "Styria", "country": "Austria"},
           {"state": "Carinthia", "country": "Austria"},
           {"state": "Tyrol", "country": "Austria"},
+          {"county": "Lienz", "state": "Tyrol", "country": "Austria"}, # special case for eastern tyrol
           {"state": "Vorarlberg", "country": "Austria"}]
 
 NETWORK_TYPE = "walk"
@@ -73,12 +70,13 @@ def assign_color(category, distance):
     else:
         return -1
     
-def create_name(place):
+def create_name(place, snapping="partial"):
     """
     Create a name for the graph and output files. Also used to find existing graphs.
 
     Parameters:
         place (dict | list[dict]): The place to create the name for.
+        snapping (bool): If not "partial", add to the name. Refers to the edge_snapping parameter in calculate_isochrones.
 
     Returns:    
         str: The name for the graph and output files.
@@ -91,6 +89,9 @@ def create_name(place):
         name = "_".join([p.get('state', p.get('city', "")) for p in place])
     else:
         name += place.get('state', place.get('city', ""))
+
+    if snapping != "partial":
+        name += f"_snapping_{snapping}"
 
     return name
     
@@ -129,7 +130,7 @@ def draw_graph(G, ns=0, nc="none", gdf=None, return_fig=False):
         return fig, ax
     
 
-def load_graph(places: list[dict] | dict, network_type: str = NETWORK_TYPE, union: bool = True, crs: str = TARGET_CRS, save: bool = True) -> list[nx.Graph] | nx.Graph:
+def load_graph(places: list[dict] | dict, network_type: str = NETWORK_TYPE, crs: str = TARGET_CRS, save: bool = True) -> nx.Graph:
     """
     Load the graph of the specified places from the data folder.
     Or download the graph from OSM if it does not exist.
@@ -137,7 +138,6 @@ def load_graph(places: list[dict] | dict, network_type: str = NETWORK_TYPE, unio
     Parameters:
         places (list[dict]): A list of dictionaries containing the place information.
         network_type (str): The network type to use for the graph. Defaults to "walk".
-        union (bool): If True, combine the graphs of the places to one graph. Defaults to True.
         crs (str): The CRS to project the graph to. Defaults to TARGET_CRS.
         save (bool): If True, save the graph(s) to the data folder. Defaults to True.
 
@@ -151,16 +151,23 @@ def load_graph(places: list[dict] | dict, network_type: str = NETWORK_TYPE, unio
         places = [places]
 
     for place in places:
-        n = place.get("state", place.get("city", ""))
+        n = place.get("county", place.get("state", place.get("city", "")))
 
         if os.path.exists(f"{PATH_GRAPHS_IN}graph_{n}.pkl"):
             #G = ox.load_graphml(f"{PATH_GRAPHS_IN}/graph_{n}.graphml")
-            print(f"Loading existing graph for {n}" + ' '*20, end="\r")
+            print(f"Loading existing graph for {n}")
             with open(f"{PATH_GRAPHS_IN}graph_{n}.pkl", "rb") as f:
                 g = pickle.load(f)
         else:
-            print(f"Downloading graph for {n}" + ' '*20, end="\r")
+            print(f"Downloading graph for {n}")
             g = ox.graph_from_place(place, network_type=network_type)
+
+            # NOTE: special case for Tyrol, combine with Lienz for Eastern Tyrol
+            # combining is done only once, the stored graph for Tyrol will then contain both parts (tyrol, eastern tyrol)
+            # if place.get("state", None) == "Tyrol":
+            #     g2 = ox.graph_from_place({"county": "Lienz", "state": "Tyrol", "country": "Austria"}, network_type=network_type)
+            #     g = nx.union(g, g2)
+
             #ox.save_graphml(G, f"{PATH_GRAPHS_IN}/graph_{n}.graphml")
             if save:
                 with open(f"{PATH_GRAPHS_IN}graph_{n}.pkl", "wb") as f:
@@ -168,21 +175,14 @@ def load_graph(places: list[dict] | dict, network_type: str = NETWORK_TYPE, unio
 
         graphs.append(g)
 
-    if union:
-        #print(f"Combining graphs" + ' '*20, end="\r")
-        #time_before = time.time()
-        g = nx.compose_all(graphs)
-        #time_after = time.time()
-        #print(f"Combined graphs in {time_after - time_before:.3f}s" + ' '*20)
+    print("Combining and projecting graphs")
+    g = nx.compose_all(graphs)
 
-        # NOTE: most time spent on projection
-        g = ox.projection.project_graph(g, to_crs=crs)
-        return g
+    # NOTE: most time spent on projection
+    g = ox.projection.project_graph(g, to_crs=crs)
+
+    return g
     
-    if len(graphs) == 1:
-        return ox.projection.project_graph(graphs[0], to_crs=crs)
-    else:
-        return [ox.projection.project_graph(g, to_crs=crs) for g in graphs]
 
 
 def load_stops(regions: list[str] = ["all_regions"], day: int = 20240528, crs: str = TARGET_CRS) -> pd.DataFrame:
@@ -211,7 +211,7 @@ def load_stops(regions: list[str] = ["all_regions"], day: int = 20240528, crs: s
     return df
 
 
-def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=25, nearest_node_threshold=50, edge_snapping=False) -> gpd.GeoDataFrame:
+def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=25, nearest_node_threshold=50, edge_snapping:str="partial") -> gpd.GeoDataFrame:
     """
     Calculate the isochrones for the specified distances.
     
@@ -222,51 +222,71 @@ def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=2
         crs (str): The CRS to project the isochrones to. Defaults to target_crs.
         buffer (int): The buffer size in meters. Smooths the isochrones. Defaults to 1.
         nearest_node_threshold (int): The maximum distance in meters to consider a node as a stop. Otherwise use edge snapping. Defaults to 50.
-        edge_snapping (bool): If True, use edge snapping for all stops. Other wise use edge snapping only futher away than nearest_node_threshold. Defaults to False.
+        edge_snapping (str): If "all", use edge snapping for all stops. "partial" for edge snapping for node further away than nearest_node_threshold. "none" for no edge snapping. Defaults to "partial".
 
     Returns:
         gpd.GeoDataFrame: A GeoDataFrame containing the isochrones for each stop and distance.
     """
 
-    if edge_snapping:
-        # calculate isochrones with edge snapping for all stops
-        gdf = calculate_isochrones_nearest_edges(G, stops, distances, crs, buffer)
-        return gdf
+    nodes = []
+    dists = []
+    ids_far_away = []
 
-    # for each stop select the closes node in the graph to represent it
-    nodes, dists = ox.nearest_nodes(G, stops['x'], stops['y'], return_dist=True)
+    if edge_snapping != "none":
+        # fill in missing edge geometry if some kind of snapping is used since some edges have no geometry attribute
+        for u, v, k, data in G.edges(keys=True, data=True):
+            if "geometry" not in data:
+                data["geometry"] = LineString([
+                    (G.nodes[u]["x"], G.nodes[u]["y"]),
+                    (G.nodes[v]["x"], G.nodes[v]["y"])
+                ])
 
-    # select stop nodes furter away than 50m from actual stop location
-    far_away_ids = np.where(dists > nearest_node_threshold)[0]
-    stops_far_away = stops.iloc[far_away_ids]
-    # calculate isochrones with edge snapping for far away stops
-    gdf_snapping = calculate_isochrones_nearest_edges(G, stops_far_away, distances, crs, buffer)
+    if edge_snapping == "all":
+        # if snapping is all, use edge snapping for all stops
+        nodes_far_away_lengths = reachable_nodes_from_snapped_point(G, stops["x"], stops["y"], distances[-1])
+    else:
+        # for each stop select the closes node in the graph to represent it
+        nodes, dists = ox.nearest_nodes(G, stops['x'], stops['y'], return_dist=True)
 
-    #create list node_id, stop_id, category
-    node_list = np.rec.fromarrays([nodes, stops["stop_id"], stops['category']])
-    # remove far away stops from nodes list
-    node_list = np.delete(node_list, far_away_ids)
+        #create list node_id, stop_id, category
+        # node_list = np.rec.fromarrays([nodes, dists, stops["stop_id"], stops['category']]) # stops['x'], stops['y']
 
+        if edge_snapping == "partial":
+            # if snapping is partial, use edge snapping for nodes further away than nearest_node_threshold
+            ids_far_away = np.where(dists > nearest_node_threshold)[0]
+            nodes_far_away_df = stops.iloc[ids_far_away]
+            nodes_far_away_lengths = reachable_nodes_from_snapped_point(G, nodes_far_away_df["x"], nodes_far_away_df["y"], distances[-1])
+
+    
     distances.sort()
-
     records = []
 
-    for cn,_,cat in node_list:
+    node_far_away_counter = 0
+    for index, row in stops.iterrows():
+        cat = row["category"]
 
-        # select all nodes within the max distance
-        lengths = nx.single_source_dijkstra_path_length(
-            G,
-            cn,
-            cutoff=distances[-1],
-            weight="length"
-        )
+        if edge_snapping == "all":
+            # if snapping is all, simply use precalculated node lengths for all stops at position of index
+            lengths = nodes_far_away_lengths[index]
+        elif edge_snapping == "partial" and dists[index] > nearest_node_threshold:
+            # if snapping is partial, use precalculated node lengths for stops further away than nearest_node_threshold with counter variable
+            lengths = nodes_far_away_lengths[node_far_away_counter]
+            node_far_away_counter += 1
+        else:
+            # in any other case i.e. node is close enough to stop or snapping is none, run dijkstra for closest node
+            lengths = nx.single_source_dijkstra_path_length(
+                G,
+                nodes[index],
+                cutoff=distances[-1],
+                weight="length"
+            )
 
         prev_d = 0
         # for each distance, select all nodes in the distance band
         for d in distances:
             color = PTSQL_COLORS[assign_color(cat, d)]
             if color == "none": #skip black areas
-                break #skip entire loop for this node since there are no colored isos left
+                break #skip entire loop for this node/stop since there are no colored isos left
 
             ring_nodes = [ Point((G.nodes[n]["x"], G.nodes[n]["y"])) for n, dist in lengths.items() if prev_d < dist <= d ]
 
@@ -274,7 +294,7 @@ def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=2
                 poly = gpd.GeoSeries(ring_nodes).union_all().convex_hull.buffer(buffer)
 
                 records.append({
-                    "center": cn,
+                    "center": index,
                     "distance": d,
                     "color": color,
                     "geometry": poly
@@ -283,95 +303,110 @@ def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=2
             prev_d = d
 
     gdf = gpd.GeoDataFrame(records, crs=crs)
-    # add snapping gdf to main gdf
-    gdf = gpd.GeoDataFrame(pd.concat([gdf, gdf_snapping]))
 
     # dissolve polygons of same color into one shape (Multipolygon) and reorder by reversed PTSQL_COLORS (largest shape first)
     # this allows plotting the polygons in the correct order to make smaller polygons on top of larger ones
     gdf = gdf.dissolve(by="color").reindex(PTSQL_COLORS[::-1])
 
     return gdf
- 
-def calculate_isochrones_nearest_edges(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=25) -> gpd.GeoDataFrame:
+
+def reachable_nodes_from_snapped_point(G, xs, ys, max_dist=DISTANCES[-1]) -> list[dict[int, float]]:
     """
-    Same as calculate_isochrones but uses nearest_edges and node snapping instead of nearest_nodes
+    Snap points to nearest edge and get all nodes reachable from the point within the max distance.
+
+    Parameters:
+        G (nx.Graph): The graph to calculate the isochrones for.
+        xs (float): The x coordinate of not snapped point. Can be a list|series of coordinates.
+        ys (float): The y coordinate of not snapped point. Can be a list|series of coordinates.
+        max_dist (int): maximum isochrone distance in meters. Defaults to DISTANCES[-1].
+
+    Returns:
+        list[dict[int, float]]: A list of dictionaries containing the node ids and distances to the snapped points.
     """
-    edges, dists = ox.nearest_edges(G, stops['x'], stops['y'], return_dist=True)
-    edge_list = np.rec.fromarrays([edges, stops["stop_id"], stops['category'], stops['x'], stops['y']])
+    # region: old approach, single point at a time
+    # u,v,k = ox.nearest_edges(G, x, y, return_dist=False)
 
-    distances.sort()
+    # # prepare vars
+    # edge = G.get_edge_data(u, v, k)
+    # # some edges have no geometry attribute, so add straight line as default
+    # geom = edge.get("geometry", LineString([(G.nodes[u]["x"], G.nodes[u]["y"]),(G.nodes[v]["x"], G.nodes[v]["y"]),]))
+        
+    # p = Point(x, y)
 
-    records = []
+    # # project point to nearest edge
+    # proj_dist = geom.project(p)
+    # snap_point = geom.interpolate(proj_dist)
 
-    for e,_,cat,x,y in edge_list:
+    # # calculate the distance of snapped point to each edge endpoint, turn both end nodes into points
+    # dist_to_u = snap_point.distance(Point(G.nodes[u]["x"], G.nodes[u]["y"]))
+    # dist_to_v = snap_point.distance(Point(G.nodes[v]["x"], G.nodes[v]["y"]))
 
-        # prepare vars
-        u,v,k = e
-        edge = G.get_edge_data(u, v, k)
-        # some edges have no geometry attribute, so add straight line as default
-        geom = edge.get("geometry", LineString([(G.nodes[u]["x"], G.nodes[u]["y"]),(G.nodes[v]["x"], G.nodes[v]["y"]),]))
-            
-        p = Point(x, y)
+    # # run dijkstra to get reachable node for each edge endpoint with adjusted max distance
+    # lengths_u = nx.single_source_dijkstra_path_length(
+    #     G,
+    #     u,
+    #     cutoff=distances[-1]-dist_to_u,
+    #     weight="length"
+    # )
+    # lengths_v = nx.single_source_dijkstra_path_length(
+    #     G,
+    #     v,
+    #     cutoff=distances[-1]-dist_to_v,
+    #     weight="length"
+    # )
 
-        # project point to nearest edge
-        proj_dist = geom.project(p)
+    # # add back distance to each reachable node
+    # lengths_u = {n: d + dist_to_u for n, d in lengths_u.items()}
+    # lengths_v = {n: d + dist_to_v for n, d in lengths_v.items()}
+
+    # # merge node sets and keep shorter distance if exists in both sets
+    # lengths = {
+    #     n: min(lengths_u.get(n, np.inf), lengths_v.get(n, np.inf)) for n in lengths_u.keys() | lengths_v.keys()
+    # }
+
+    # return lengths
+    # endregion
+
+    edges = ox.distance.nearest_edges(G, xs, ys, return_dist=False)
+
+    lengths_for_all_nodes: list[dict[int, float]] = []
+
+    for i in range(len(xs)):
+        u, v, k = edges[i]
+
+        edge = G.edges[u, v, k]
+        geom = edge["geometry"]
+
+        proj_dist = geom.project(Point(xs.iloc[i], ys.iloc[i]))
         snap_point = geom.interpolate(proj_dist)
 
-        # calculate the distance of snapped point to each edge endpoint, turn both end nodes into points
+        # sx, sy = snap_point.x, snap_point.y
+        # ux, uy = G.nodes[u]["x"], G.nodes[u]["y"]
+        # vx, vy = G.nodes[v]["x"], G.nodes[v]["y"]
+
+        # dist_to_u = ((sx - ux)**2 + (sy - uy)**2)**0.5
+        # dist_to_v = ((sx - vx)**2 + (sy - vy)**2)**0.5
+
         dist_to_u = snap_point.distance(Point(G.nodes[u]["x"], G.nodes[u]["y"]))
         dist_to_v = snap_point.distance(Point(G.nodes[v]["x"], G.nodes[v]["y"]))
 
-        # run dijkstra to get reachable node for each edge endpoint with adjusted max distance
-        lengths_u = nx.single_source_dijkstra_path_length(
-            G,
-            u,
-            cutoff=distances[-1]-dist_to_u,
-            weight="length"
-        )
-        lengths_v = nx.single_source_dijkstra_path_length(
-            G,
-            v,
-            cutoff=distances[-1]-dist_to_v,
-            weight="length"
-        )
+        lengths_u = nx.single_source_dijkstra_path_length(G, u, cutoff=max_dist - dist_to_u, weight="length")
+        lengths_v = nx.single_source_dijkstra_path_length(G, v, cutoff=max_dist - dist_to_v, weight="length")
 
-        # add back distance to each reachable node
-        lengths_u = {n: d + dist_to_u for n, d in lengths_u.items()}
-        lengths_v = {n: d + dist_to_v for n, d in lengths_v.items()}
+        for n in lengths_u:
+            lengths_u[n] += dist_to_u
 
-        # merge node sets and keep shorter distance if exists in both sets
-        lengths = {
-            n: min(lengths_u.get(n, np.inf), lengths_v.get(n, np.inf)) for n in lengths_u.keys() | lengths_v.keys()
-        }
+        for n in lengths_v:
+            lengths_v[n] += dist_to_v
 
-        # do isochrone calculation as before
-        
-        prev_d = 0
-        # for each distance, select all nodes in the distance band
-        for d in distances:
-            color = PTSQL_COLORS[assign_color(cat, d)]
-            if color == "none": #skip black areas
-                break #skip entire loop for this node since there are no colored isos left
+        lengths_for_all_nodes.append({
+            n: min(lengths_u.get(n, np.inf), lengths_v.get(n, np.inf))
+            for n in lengths_u.keys() | lengths_v.keys()
+        })
 
-            ring_nodes = [ Point((G.nodes[n]["x"], G.nodes[n]["y"])) for n, dist in lengths.items() if prev_d < dist <= d ]
+    return lengths_for_all_nodes
 
-            if ring_nodes:
-                poly = gpd.GeoSeries(ring_nodes).union_all().convex_hull.buffer(buffer)
-                records.append({
-                    "center": snap_point,
-                    "distance": d,
-                    "color": color,
-                    "geometry": poly
-                })
-
-            prev_d = d
-    
-    gdf = gpd.GeoDataFrame(records, crs=G.graph["crs"])
-    gdf = gdf.dissolve(by="color").reindex(PTSQL_COLORS[::-1])
-
-    return gdf
-
-def calculate_batch_isochrones(places, regions, days, edge_snapping=False):
+def run_calculation(places, regions, days, edge_snapping="partial"):
     """
     Calculate the isochrones for all the specified places and regions each day seprately in parallel.
     Can also be used for a single day.
@@ -381,14 +416,15 @@ def calculate_batch_isochrones(places, regions, days, edge_snapping=False):
         places (list[dict] | dict): A list of dictionaries containing the place information or a single dictionary.
         regions (list[str]): A list of names regions stop files to calculate the isochrones for.
         days (list[int]): A list of days to calculate the isochrones for.
+        edge_snapping (str): If "all", use edge snapping for all stops. "partial" for edge snapping for node further away than nearest_node_threshold. "none" for no edge snapping. Defaults to "partial".
     """
 
-    name = create_name(places)
+    name = create_name(places, edge_snapping)
 
-    print(f"Calculating isochrones for batch (multiple days)")
+    print(f"Started calculation")
     start_time = time.time()
 
-    print(f"Loading graphs for {name}", end="\r")
+    print(f"Loading graphs for {name}")
     graph = load_graph(places)
     load_graph_time = time.time()
     print(f"Loaded graphs for {name} ..... {load_graph_time - start_time:.3f}s")
@@ -433,49 +469,6 @@ def calculate_batch_isochrones(places, regions, days, edge_snapping=False):
     # plt.figure(fig)
     # plt.show()
 
-
-def run_calculation(place, region, day):
-    start_time = time.time()
-
-    print(f"Loading stops for {", ".join(region)}", end="\r")
-    stops = load_stops(region, day)
-
-    load_stops_time = time.time()
-    print(f"Loaded stops for {", ".join(region)} ..... {load_stops_time - start_time:.3f}s")
-
-    print(f"Loading graphs for {", ".join([p.get('state', p.get('city', "")) for p in place])}", end="\r")
-    G = load_graph(place, save=True)
-    load_graph_time = time.time()
-    print(f"Loaded graphs for {", ".join([p.get('state', p.get('city', "")) for p in place])} ..... {load_graph_time - load_stops_time:.3f}s")
-
-    #G = G[0] if len(G) == 1 else G
-
-    print(f"Calculating isochrones", end="\r")
-    isochrones = calculate_isochrones(G, stops)
-    isochrones_time = time.time()
-    print(f"{"Calculated isochrones"} ..... {isochrones_time - load_graph_time:.3f}s")
-
-    #print(isochrones)
-
-    # draw
-    print(f"Drawing isochrones plot", end="\r")
-    fig, ax = draw_graph(G, gdf=isochrones, return_fig=True)
-    draw_time = time.time()
-    print(f"{"Drawn isochrones plot"} ..... {draw_time - isochrones_time:.3f}s")
-
-    name = create_name(place, simplify=simplify)
-    name += "_" + str(day)
-
-    print(f"Saving isochrones to {PATH_ISOCHRONES_OUT}{name}.gpkg and figure to {PATH_FIGS_OUT}{name}.png", end="\r")
-    isochrones.to_file(f"{PATH_ISOCHRONES_OUT}{name}.gpkg", layer="isochrones", driver="GPKG")
-    fig.savefig(f"{PATH_FIGS_OUT}{name}.png")
-    save_time = time.time()
-    print(f"Saved isochrones to {PATH_ISOCHRONES_OUT}{name}.gpkg and figure to {PATH_FIGS_OUT}{name}.png ..... {save_time - draw_time:.3f}s")
-
-    print(f"Finished calculation in {save_time - start_time:.3f}s\n\n")
-    plt.figure(fig)
-    plt.show()
-
 if __name__ == "__main__":
     #day = 20240528
     
@@ -490,8 +483,12 @@ if __name__ == "__main__":
     # batch calculation for multiple days
     places = PLACES
     regions = ["all_regions"]
-    days = [20241023, 20241030]
+    days = [20240210, 20240410, 20240610, 20240810, 20241010, 20241210, 20241023, 20241030]
+
+    # places = [{"state": "Tyrol", "country": "Austria"}]
+    # regions = ["vvt_vmobil_obb"]
+    # days = [20240528]
 
     #print(create_name(places))
 
-    calculate_batch_isochrones(places, regions, days, edge_snapping=False)
+    run_calculation(places, regions, days, edge_snapping="partial")

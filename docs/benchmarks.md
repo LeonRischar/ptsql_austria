@@ -1,5 +1,70 @@
 # Benchmarks
 
+## BUG ???
+- Times for Tyrol on 20240528 (no eastern tyrol, partial edge snapping)
+```
+Calculated isochrones for day 20240528 ..... 495.046s
+```
+
+
+## Times for all regions on 6 days (with partial edge snapping)
+```
+Started calculation
+Loading graphs for all_regions
+Loading existing graph for Vienna
+Loading existing graph for Lower Austria
+Loading existing graph for Upper Austria
+Loading existing graph for Burgenland
+Loading existing graph for Salzburg
+Loading existing graph for Styria
+Loading existing graph for Carinthia
+Loading existing graph for Tyrol
+Loading existing graph for Lienz
+Loading existing graph for Vorarlberg
+Loaded graphs for all_regions ..... 254.199s
+--------------
+Calculating day 20240210
+Loaded stops for all_regions ..... 0.048s
+Calculated isochrones for day 20240210 ..... 115.792s
+Saved isochrones to ../data/out/isochrones_gpkg/all_regions_20240210.gpkg ..... 0.205s
+--------------
+Calculating day 20240410
+Loaded stops for all_regions ..... 0.047s
+Calculated isochrones for day 20240410 ..... 163.194s
+Saved isochrones to ../data/out/isochrones_gpkg/all_regions_20240410.gpkg ..... 0.144s
+--------------
+Calculating day 20240610
+Loaded stops for all_regions ..... 0.043s
+Calculated isochrones for day 20240610 ..... 122.366s
+Saved isochrones to ../data/out/isochrones_gpkg/all_regions_20240610.gpkg ..... 0.141s
+--------------
+Calculating day 20240810
+Loaded stops for all_regions ..... 0.033s
+Calculated isochrones for day 20240810 ..... 105.171s
+Saved isochrones to ../data/out/isochrones_gpkg/all_regions_20240810.gpkg ..... 0.079s
+--------------
+Calculating day 20241010
+Loaded stops for all_regions ..... 0.041s
+Calculated isochrones for day 20241010 ..... 124.502s
+Saved isochrones to ../data/out/isochrones_gpkg/all_regions_20241010.gpkg ..... 0.137s
+--------------
+Calculating day 20241210
+Loaded stops for all_regions ..... 0.043s
+Calculated isochrones for day 20241210 ..... 127.923s
+Saved isochrones to ../data/out/isochrones_gpkg/all_regions_20241210.gpkg ..... 0.126s
+--------------
+Calculating day 20241023
+Loaded stops for all_regions ..... 0.043s
+Calculated isochrones for day 20241023 ..... 124.585s
+Saved isochrones to ../data/out/isochrones_gpkg/all_regions_20241023.gpkg ..... 0.159s
+--------------
+Calculating day 20241030
+Loaded stops for all_regions ..... 0.049s
+Calculated isochrones for day 20241030 ..... 120.620s
+Saved isochrones to ../data/out/isochrones_gpkg/all_regions_20241030.gpkg ..... 0.126s
+--------------
+```
+
 ## Times for loading and combining graphs (combining with new graph, not compose):
 ```
 Calculating isochrones for batch (multiple days)
@@ -30,7 +95,7 @@ Loaded graphs for all_regions ..... 234.813s
   Saved isochrones to ../data/out/isochrones_gpkg/all_regions_20240528.gpkg and figure to ../data/out/figs/all_regions_20240528.png ..... 14.362s
 ```
 
-## times for all regions on 6 days 
+## times for all regions on 6 days (no edge snapping)
 ```
 Calculating batch isochrones in parallel
 Loaded graphs for all_regions ..... 311.892s       
