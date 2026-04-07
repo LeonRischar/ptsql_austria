@@ -9,69 +9,29 @@ import numpy as np
 import regex as re
 from datetime import datetime
 
-PATH_IN = "../data/in/"
-PATH_OUT = "../data/out/stop_dfs/"
+from config import *
 
-REGIONS = {"vor": "20241214-0617_gtfs_vor_2024", #vienna, lower austria, burgenland
-           "ooevv": "20241212-0156_gtfs_ooevv_2024", #upper austria
-           "esg": "20241203-0058_gtfs_esg_2024", #linz
-           "verbundlinie": "20241217-0310_gtfs_verbundlinie_2024", #styria
-           "kaernterlinien": "20241214-0253_gtfs_kaerntnerlinien_2024", #carinthia
-           "salzburgverkehr": "20241217-0359_gtfs_salzburgverkehr_2024", #salzburg
-           "vvt": "20241217-0436_gtfs_vvt_2024", #tyrol
-           "vmobil": "20241212-0624_gtfs_vmobil_2024", #vorarlberg
-           "obb": "GTFS_2024_obb"} #oebb maybe 20241217-0222_gtfs_evu_2024
-
-# stop categories
-TABLE_ROMAN = np.array([
-    ["I", "I", "II", "III"],        # < 5 min
-    ["I", "II", "III", "III"],      # 5 >= x <= 10
-    ["II", "III", "IV", "IV"],      # 10 < x < 20
-    ["III", "IV", "V", "V"],        # 20 >= x < 40
-    ["IV", "V", "VI", "VI"],        # 40 >= x <= 60
-    ["V", "VI", "VII", "VII"],      # 60 < x <= 120  
-    ["X", "VII", "VIII", "VIII"],    # 120 < x <= 210 
-    ["X", "X", "X", "X"],               # > 210 
-                                    # X = empty, i.e. worst case
-])
-TABLE = np.array([
-    [0, 0, 0, 0],        # < 5 min
-    [0, 1, 2, 2],        # 5 >= x <= 10
-    [1, 2, 3, 3],        # 10 < x < 20
-    [2, 3, 4, 4],        # 20 >= x < 40
-    [3, 4, 5, 5],        # 40 >= x <= 60
-    [4, 5, 6, 6],        # 60 < x <= 120  
-    [-1, 6, 7, 7],       # 120 < x <= 210 
-    [-1, -1, -1, -1],    # > 210
-])
-
-
-# transport_category = ["Fernverkehr REX", 
-#                       "S-Bahn / U-Bahn, Regionalbahn, Schnellbus, Lokalbahn", 
-#                       "Straßenbahn, Metrobus, 0-Bus", 
-#                       "Bus"]
-ROUTE_TYPE_TRANSLATION = {0: 2, 1: 1, 2: 0, 3: 3, 11: 3,} #7: 3, 4: 3
 
 def lookup_category(interval, t_cat):
     """
     Lookup the stop category based on the interval and the transport type.
     """
     if interval < 5:
-        return TABLE[0][t_cat]
+        return STOP_CATEGORY_TABLE[0][t_cat]
     elif interval <= 10:
-        return TABLE[1][t_cat]
+        return STOP_CATEGORY_TABLE[1][t_cat]
     elif interval < 20:
-        return TABLE[2][t_cat]
+        return STOP_CATEGORY_TABLE[2][t_cat]
     elif interval < 40:
-        return TABLE[3][t_cat]
+        return STOP_CATEGORY_TABLE[3][t_cat]
     elif interval <= 60:
-        return TABLE[4][t_cat]
+        return STOP_CATEGORY_TABLE[4][t_cat]
     elif interval <= 120:
-        return TABLE[5][t_cat]
+        return STOP_CATEGORY_TABLE[5][t_cat]
     elif interval <= 210:
-        return TABLE[6][t_cat]
+        return STOP_CATEGORY_TABLE[6][t_cat]
     else:
-        return TABLE[7][t_cat]
+        return STOP_CATEGORY_TABLE[7][t_cat]
     
 def category_to_roman(t_cat, reverse=False):
     """
@@ -110,8 +70,9 @@ def calculate_rank_interval_for_region(state_name: str, selected_day: int) -> pd
         pd.DataFrame: A DataFrame containing the rank and interval for the specified region and day.    
     """
 
-    #----- 1. load data -----#
-    path = f"{PATH_IN}/{REGIONS[state_name]}/"
+    # load data
+
+    path = PATH_IN_GTFS +  GTFS_REGIONS[state_name]
 
     stops = pd.read_csv(path + "/stops.txt", quotechar='"', sep=",")
     stop_times = pd.read_csv(path + "/stop_times.txt", quotechar='"', sep=",")
@@ -120,7 +81,8 @@ def calculate_rank_interval_for_region(state_name: str, selected_day: int) -> pd
     calendar = pd.read_csv(path + "/calendar.txt", quotechar='"', sep=",")
     calendar_dates = pd.read_csv(path + "/calendar_dates.txt", quotechar='"', sep=",")
 
-    #----- 2. filter calendar and calendar_dates -----# 
+    # filter calendar and calendar_dates
+
     # find weekday of selected day
     date = datetime.fromisoformat(str(selected_day))
     day_string = date.strftime("%A").lower()
@@ -132,7 +94,7 @@ def calculate_rank_interval_for_region(state_name: str, selected_day: int) -> pd
     added_service = calendar_dates[(calendar_dates['date'] == selected_day) & (calendar_dates['exception_type'] == 1)]
     removed_service = calendar_dates[(calendar_dates['date'] == selected_day) & (calendar_dates['exception_type'] == 2)]
 
-    #----- 3. filter to keep only valid trips -----#
+    # filter to keep only valid trips
     trips_filtered = trips[trips['service_id'].isin(calendar_filtered['service_id'])]
 
     # remove services with exception_type = 2 from calendar_dates
@@ -145,7 +107,8 @@ def calculate_rank_interval_for_region(state_name: str, selected_day: int) -> pd
         print(f"No trips found for {state_name} on {selected_day}! Either no service is running on this day or the input data is incomplete/incorrect.")
         return pd.DataFrame()
 
-    #----- 4. merge trips and routes-----#
+    # merge trips and routes
+
     # merge trips with routes information
     routes_trips = pd.merge(trips_full, routes, on='route_id', how='left')
 
@@ -155,7 +118,7 @@ def calculate_rank_interval_for_region(state_name: str, selected_day: int) -> pd
     routes_trips['trip_short_name'] = routes_trips['trip_short_name'].astype('str')
     routes_trips['rank'] = routes_trips.apply(lambda x: detect_route_type(x['trip_short_name'], x['route_type']), axis=1)
 
-    #----- 5. prepare stops and stop_times -----#
+    #prepare stops and stop_times
     stops_filtered = stops.copy()
     stops_filtered['stop_id'] = stops_filtered['stop_id'].astype(str).apply(
         lambda x: (
@@ -184,24 +147,16 @@ def calculate_rank_interval_for_region(state_name: str, selected_day: int) -> pd
         )
     )
 
-    #----- 6. add trip and route information to stop_times -----#
+    # add trip and route information to stop_times
     stop_times_trips = pd.merge(stop_times_filtered, routes_trips, on='trip_id', how='inner')
 
-    #----- 7. calculate rank intervals -----#
+    # calculate rank intervals
     stop_times_grouped = stop_times_trips.groupby(['stop_id']).agg(rank=("rank", "min"), count=("rank", "count")).reset_index().copy()
 
-    # TODO: maybe after merge with obb stations
-    # stop_times_grouped["interval"] = stop_times_grouped["count"].apply(lambda x: 840 / (x/2))
-    # stop_times_grouped["category"] = stop_times_grouped.apply(lambda x: lookup_category(x["interval"], x["rank"]), axis=1)
-
-    #----- 8. merge with stops and kepp only needed columns -----#
-    # TODO: change "how" to "left" to include all stops, also ones without rank and count (nan)
+    # merge with stops and kepp only needed columns
     stops_final = pd.merge(stops_filtered_final.drop(['zone_id', 'location_type', 'level_id', 'platform_code', 'parent_station'], axis=1), stop_times_grouped, on='stop_id', how='inner')
 
     return stops_final
-
-def wrapper(args):
-    return calculate_rank_interval_for_region(*args)
 
 def calculate_rank_interval_for_all_regions(selected_day: int, selected_regions: list[str] = None):
     """
@@ -220,7 +175,7 @@ def calculate_rank_interval_for_all_regions(selected_day: int, selected_regions:
     state_dfs = []
     total_time = 0
 
-    selected_regions = list(REGIONS.keys()) if selected_regions is None else selected_regions
+    selected_regions = list(GTFS_REGIONS.keys()) if selected_regions is None else selected_regions
 
     print(f"Calculating regions: ")
     for state_name in selected_regions:
@@ -254,13 +209,21 @@ def calculate_rank_interval_for_all_regions(selected_day: int, selected_regions:
     print(f"Number of stops: {len(all_regions)}")
 
     # save to file
-    f_name = f"all_regions_{selected_day}.csv" if selected_regions == list(REGIONS.keys()) else f"{'_'.join(selected_regions)}_{selected_day}.csv"
-    all_regions.to_csv(PATH_OUT + f_name, index=False)
-    print(f"\nSaved to {PATH_OUT + f_name}")
+    f_name = f"all_regions_{selected_day}.csv" if selected_regions == list(GTFS_REGIONS.keys()) else f"{'_'.join(selected_regions)}_{selected_day}.csv"
+    all_regions.to_csv(PATH_OUT_STOPS + f_name, index=False)
+    print(f"\nSaved to {PATH_OUT_STOPS + f_name}")
 
 if __name__ == "__main__":
-    days = [20241023, 20241030]
-    regions = []
+    week_days = [20240131, 20240215, 20240315, 20240415, 20240515, 20240614, 20240715, 20240814, 20240916, 20241015, 20241115, 20241213]
+    existing_solution = [20241023, 20241030]
+    weekends_holidays = [20240210, 20240414, 20240608, 20240811, 20241012, 20241208]
+    regions = None #means all
+
+    days = week_days + existing_solution + weekends_holidays
+
+    # change in August because 15th is holiday
+    # days = [20240814]
+    days = [20240529]
 
     # batch calculation for multiple days
     for d in days:

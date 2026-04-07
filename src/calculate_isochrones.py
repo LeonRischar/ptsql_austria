@@ -6,51 +6,14 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import networkx as nx
 import osmnx as ox
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, MultiPoint, Point
 
 from pyproj import Transformer 
 
 import pandas as pd
 import numpy as np
 
-# settings, default constants
-
-SOURCE_CRS = "epsg:4326"
-TARGET_CRS = "epsg:31287"
-
-PLACES = [{"city": "Vienna", "country": "Austria"},
-          {"state": "Lower Austria", "country": "Austria"},
-          {"state": "Upper Austria", "country": "Austria"},
-          {"state": "Burgenland", "country": "Austria"},
-          {"state": "Salzburg", "country": "Austria"},
-          {"state": "Styria", "country": "Austria"},
-          {"state": "Carinthia", "country": "Austria"},
-          {"state": "Tyrol", "country": "Austria"},
-          {"county": "Lienz", "state": "Tyrol", "country": "Austria"}, # special case for eastern tyrol
-          {"state": "Vorarlberg", "country": "Austria"}]
-
-NETWORK_TYPE = "walk"
-
-DISTANCES = [300, 500, 750, 1000, 1250]
-PTSQL_COLORS = ["#E42421", "#E95153", "#E63C1E", "#F29668", "#34672B", "#87C281", "#959595", "none"]
-
-# input data
-PATH_GRAPHS_IN = "../data/in/osmnx_graphs/"
-PATH_STOPS_IN = "../data/out/stop_dfs/"
-
-# output data
-PATH_ISOCHRONES_OUT = "../data/out/isochrones_gpkg/"
-PATH_FIGS_OUT = "../data/out/figs/"
-
-
-PTSQL_COLOR_TABLE = [[0,0,1,2,3], # I
-                    [0,1,2,3,4], # II
-                    [1,2,3,4,5], # III
-                    [2,3,4,5,6], # IV
-                    [3,4,5,6,6], # V
-                    [4,5,6,-1,-1], # VI
-                    [5,6,6,-1,-1], # VII
-                    [6,6,-1,-1,-1]] # VIII
+from config import *
 
 
 def assign_color(category, distance):
@@ -83,7 +46,7 @@ def create_name(place, snapping="partial"):
     """
 
     name = ""
-    if place == PLACES:
+    if place == GRAPH_REGIONS:
         name = "all_regions"
     elif isinstance(place, list):
         name = "_".join([p.get('state', p.get('city', "")) for p in place])
@@ -153,24 +116,17 @@ def load_graph(places: list[dict] | dict, network_type: str = NETWORK_TYPE, crs:
     for place in places:
         n = place.get("county", place.get("state", place.get("city", "")))
 
-        if os.path.exists(f"{PATH_GRAPHS_IN}graph_{n}.pkl"):
+        if os.path.exists(f"{PATH_IN_GRAPHS}graph_{n}.pkl"):
             #G = ox.load_graphml(f"{PATH_GRAPHS_IN}/graph_{n}.graphml")
             print(f"Loading existing graph for {n}")
-            with open(f"{PATH_GRAPHS_IN}graph_{n}.pkl", "rb") as f:
+            with open(f"{PATH_IN_GRAPHS}graph_{n}.pkl", "rb") as f:
                 g = pickle.load(f)
         else:
             print(f"Downloading graph for {n}")
             g = ox.graph_from_place(place, network_type=network_type)
 
-            # NOTE: special case for Tyrol, combine with Lienz for Eastern Tyrol
-            # combining is done only once, the stored graph for Tyrol will then contain both parts (tyrol, eastern tyrol)
-            # if place.get("state", None) == "Tyrol":
-            #     g2 = ox.graph_from_place({"county": "Lienz", "state": "Tyrol", "country": "Austria"}, network_type=network_type)
-            #     g = nx.union(g, g2)
-
-            #ox.save_graphml(G, f"{PATH_GRAPHS_IN}/graph_{n}.graphml")
             if save:
-                with open(f"{PATH_GRAPHS_IN}graph_{n}.pkl", "wb") as f:
+                with open(f"{PATH_IN_GRAPHS}graph_{n}.pkl", "wb") as f:
                     pickle.dump(g, f, protocol=pickle.HIGHEST_PROTOCOL)
 
         graphs.append(g)
@@ -185,12 +141,12 @@ def load_graph(places: list[dict] | dict, network_type: str = NETWORK_TYPE, crs:
     
 
 
-def load_stops(regions: list[str] = ["all_regions"], day: int = 20240528, crs: str = TARGET_CRS) -> pd.DataFrame:
+def load_stops(region: str = "all_regions", day: int = 20240528, crs: str = TARGET_CRS) -> pd.DataFrame:
     """
-    Load the stops of the specified places and day from the data folder.
+    Load the stops of the specified regions and day from the data folder. IMPORTANT: Expects ONE file for the stops to exist with the name of region.
 
     Parameters:
-        places (list[str]): A list of places to load the stops for. Defaults to ["all_regions"].
+        region (str): A string of places names to load the stops for. Defaults to "all_regions".
         day (int): The day to load the stops for. Defaults to 20240528.
         crs (str): The CRS to project the stops to. Defaults to target_crs.
 
@@ -198,12 +154,7 @@ def load_stops(regions: list[str] = ["all_regions"], day: int = 20240528, crs: s
         pd.DataFrame: A DataFrame containing the stops for the specified places and day.
     """
 
-    dfs = []
-    for region in regions:
-        dfs.append(pd.read_csv(f"{PATH_STOPS_IN}{region}_{day}.csv"))
-
-    df = pd.concat(dfs)
-    df.drop_duplicates(subset=["stop_id"], inplace=True)
+    df = pd.read_csv(f"{PATH_OUT_STOPS}{region}_{day}.csv")
 
     transformer = Transformer.from_crs(SOURCE_CRS, crs, always_xy=True)
     df["x"], df["y"] = transformer.transform(df["stop_lon"].values, df["stop_lat"].values)
@@ -245,11 +196,8 @@ def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=2
         # if snapping is all, use edge snapping for all stops
         nodes_far_away_lengths = reachable_nodes_from_snapped_point(G, stops["x"], stops["y"], distances[-1])
     else:
-        # for each stop select the closes node in the graph to represent it
+        # for each stop select the closest node in the graph to represent it
         nodes, dists = ox.nearest_nodes(G, stops['x'], stops['y'], return_dist=True)
-
-        #create list node_id, stop_id, category
-        # node_list = np.rec.fromarrays([nodes, dists, stops["stop_id"], stops['category']]) # stops['x'], stops['y']
 
         if edge_snapping == "partial":
             # if snapping is partial, use edge snapping for nodes further away than nearest_node_threshold
@@ -258,7 +206,7 @@ def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=2
             nodes_far_away_lengths = reachable_nodes_from_snapped_point(G, nodes_far_away_df["x"], nodes_far_away_df["y"], distances[-1])
 
     
-    distances.sort()
+    distances.sort() #smallest to largest
     records = []
 
     node_far_away_counter = 0
@@ -281,17 +229,21 @@ def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=2
                 weight="length"
             )
 
-        prev_d = 0
+        nodes_sorted = sorted(lengths.items(), key=lambda x: x[1])
+        selected_nodes = []
+        i = 0
         # for each distance, select all nodes in the distance band
         for d in distances:
             color = PTSQL_COLORS[assign_color(cat, d)]
             if color == "none": #skip black areas
                 break #skip entire loop for this node/stop since there are no colored isos left
 
-            ring_nodes = [ Point((G.nodes[n]["x"], G.nodes[n]["y"])) for n, dist in lengths.items() if prev_d < dist <= d ]
+            while i < len(nodes_sorted) and nodes_sorted[i][1] <= d:
+                selected_nodes.append(Point((G.nodes[nodes_sorted[i][0]]["x"], G.nodes[nodes_sorted[i][0]]["y"])))
+                i += 1
 
-            if ring_nodes:
-                poly = gpd.GeoSeries(ring_nodes).union_all().convex_hull.buffer(buffer)
+            if selected_nodes:
+                poly = gpd.GeoSeries(selected_nodes).union_all().convex_hull.buffer(buffer)
 
                 records.append({
                     "center": index,
@@ -299,8 +251,6 @@ def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=2
                     "color": color,
                     "geometry": poly
                 })
-
-            prev_d = d
 
     gdf = gpd.GeoDataFrame(records, crs=crs)
 
@@ -323,82 +273,40 @@ def reachable_nodes_from_snapped_point(G, xs, ys, max_dist=DISTANCES[-1]) -> lis
     Returns:
         list[dict[int, float]]: A list of dictionaries containing the node ids and distances to the snapped points.
     """
-    # region: old approach, single point at a time
-    # u,v,k = ox.nearest_edges(G, x, y, return_dist=False)
 
-    # # prepare vars
-    # edge = G.get_edge_data(u, v, k)
-    # # some edges have no geometry attribute, so add straight line as default
-    # geom = edge.get("geometry", LineString([(G.nodes[u]["x"], G.nodes[u]["y"]),(G.nodes[v]["x"], G.nodes[v]["y"]),]))
-        
-    # p = Point(x, y)
-
-    # # project point to nearest edge
-    # proj_dist = geom.project(p)
-    # snap_point = geom.interpolate(proj_dist)
-
-    # # calculate the distance of snapped point to each edge endpoint, turn both end nodes into points
-    # dist_to_u = snap_point.distance(Point(G.nodes[u]["x"], G.nodes[u]["y"]))
-    # dist_to_v = snap_point.distance(Point(G.nodes[v]["x"], G.nodes[v]["y"]))
-
-    # # run dijkstra to get reachable node for each edge endpoint with adjusted max distance
-    # lengths_u = nx.single_source_dijkstra_path_length(
-    #     G,
-    #     u,
-    #     cutoff=distances[-1]-dist_to_u,
-    #     weight="length"
-    # )
-    # lengths_v = nx.single_source_dijkstra_path_length(
-    #     G,
-    #     v,
-    #     cutoff=distances[-1]-dist_to_v,
-    #     weight="length"
-    # )
-
-    # # add back distance to each reachable node
-    # lengths_u = {n: d + dist_to_u for n, d in lengths_u.items()}
-    # lengths_v = {n: d + dist_to_v for n, d in lengths_v.items()}
-
-    # # merge node sets and keep shorter distance if exists in both sets
-    # lengths = {
-    #     n: min(lengths_u.get(n, np.inf), lengths_v.get(n, np.inf)) for n in lengths_u.keys() | lengths_v.keys()
-    # }
-
-    # return lengths
-    # endregion
-
+    # get nearest edge once for all points that should be snapped
     edges = ox.distance.nearest_edges(G, xs, ys, return_dist=False)
 
     lengths_for_all_nodes: list[dict[int, float]] = []
 
+    # iterate over all points
     for i in range(len(xs)):
         u, v, k = edges[i]
 
+        # get edge geometry for nearest edge
         edge = G.edges[u, v, k]
         geom = edge["geometry"]
 
+        # project point to nearest edge
         proj_dist = geom.project(Point(xs.iloc[i], ys.iloc[i]))
         snap_point = geom.interpolate(proj_dist)
 
-        # sx, sy = snap_point.x, snap_point.y
-        # ux, uy = G.nodes[u]["x"], G.nodes[u]["y"]
-        # vx, vy = G.nodes[v]["x"], G.nodes[v]["y"]
-
-        # dist_to_u = ((sx - ux)**2 + (sy - uy)**2)**0.5
-        # dist_to_v = ((sx - vx)**2 + (sy - vy)**2)**0.5
-
+        # calculate the distance of snapped point to each edge endpoint
         dist_to_u = snap_point.distance(Point(G.nodes[u]["x"], G.nodes[u]["y"]))
         dist_to_v = snap_point.distance(Point(G.nodes[v]["x"], G.nodes[v]["y"]))
 
+        # run dijkstra to get reachable nodes for each edge endpoint with adjusted max distance
         lengths_u = nx.single_source_dijkstra_path_length(G, u, cutoff=max_dist - dist_to_u, weight="length")
         lengths_v = nx.single_source_dijkstra_path_length(G, v, cutoff=max_dist - dist_to_v, weight="length")
 
+        # add back distance to each reachable node
         for n in lengths_u:
             lengths_u[n] += dist_to_u
 
         for n in lengths_v:
             lengths_v[n] += dist_to_v
 
+        # merge node sets and keep shorter distance if exists in both sets
         lengths_for_all_nodes.append({
             n: min(lengths_u.get(n, np.inf), lengths_v.get(n, np.inf))
             for n in lengths_u.keys() | lengths_v.keys()
@@ -406,26 +314,29 @@ def reachable_nodes_from_snapped_point(G, xs, ys, max_dist=DISTANCES[-1]) -> lis
 
     return lengths_for_all_nodes
 
-def run_calculation(places, regions, days, edge_snapping="partial"):
+def run_calculation(region_graphs, region_stops, days, edge_snapping="partial"):
     """
     Calculate the isochrones for all the specified places and regions each day seprately in parallel.
     Can also be used for a single day.
     Note: places (graphs) and regions (stops) match i.e. contain the information relevant stops in the regions for the day(s).
     
     Parameters:
-        places (list[dict] | dict): A list of dictionaries containing the place information or a single dictionary.
+        region_graphs (list[dict] | None): A list of dictionaries containing the place information or None for all regions.
         regions (list[str]): A list of names regions stop files to calculate the isochrones for.
         days (list[int]): A list of days to calculate the isochrones for.
         edge_snapping (str): If "all", use edge snapping for all stops. "partial" for edge snapping for node further away than nearest_node_threshold. "none" for no edge snapping. Defaults to "partial".
     """
 
-    name = create_name(places, edge_snapping)
+    region_graphs = GRAPH_REGIONS if region_graphs is None else region_graphs
+    region_stops = "all_regions" if region_stops is None  or region_stops == list(GTFS_REGIONS.keys()) else "_".join(region_stops)
+
+    name = create_name(region_graphs, edge_snapping)
 
     print(f"Started calculation")
     start_time = time.time()
 
     print(f"Loading graphs for {name}")
-    graph = load_graph(places)
+    graph = load_graph(region_graphs)
     load_graph_time = time.time()
     print(f"Loaded graphs for {name} ..... {load_graph_time - start_time:.3f}s")
     print("--------------")
@@ -434,10 +345,10 @@ def run_calculation(places, regions, days, edge_snapping="partial"):
         print(f"Calculating day {d}")
         time_before = time.time()
         
-        print(f"Loading stops for {", ".join(regions)}", end="\r")
-        stops = load_stops(regions, d)
+        print(f"Loading stops for {region_stops}", end="\r")
+        stops = load_stops(region_stops, d)
         load_stops_time = time.time()
-        print(f"Loaded stops for {", ".join(regions)} ..... {load_stops_time - time_before:.3f}s")
+        print(f"Loaded stops for {region_stops} ..... {load_stops_time - time_before:.3f}s")
         
         print(f"Calculating isochrones for day {d}", end="\r")
         isochrones = calculate_isochrones(graph, stops, edge_snapping=edge_snapping)
@@ -445,10 +356,10 @@ def run_calculation(places, regions, days, edge_snapping="partial"):
         print(f"Calculated isochrones for day {d} ..... {isochrones_time - load_stops_time:.3f}s")
 
         n = name + "_" + str(d)
-        print(f"Saving isochrones to {PATH_ISOCHRONES_OUT}{n}.gpkg", end="\r")
-        isochrones.to_file(f"{PATH_ISOCHRONES_OUT}{n}.gpkg", layer="isochrones", driver="GPKG")
+        print(f"Saving isochrones to {PATH_OUT_ISOCHRONES}{n}.gpkg", end="\r")
+        isochrones.to_file(f"{PATH_OUT_ISOCHRONES}{n}.gpkg", layer="isochrones", driver="GPKG")
         save_time = time.time()
-        print(f"Saved isochrones to {PATH_ISOCHRONES_OUT}{n}.gpkg ..... {save_time - isochrones_time:.3f}s")
+        print(f"Saved isochrones to {PATH_OUT_ISOCHRONES}{n}.gpkg ..... {save_time - isochrones_time:.3f}s")
         print("--------------")
 
 
@@ -470,25 +381,21 @@ def run_calculation(places, regions, days, edge_snapping="partial"):
     # plt.show()
 
 if __name__ == "__main__":
-    #day = 20240528
-    
     # region name for street network graph, e.g. {"city": "Vienna", "country": "Austria"}, 
-    # use key "city" only for Vienna else "state", see top of file for list of regions
-    #place = [{"state": "Tyrol", "country": "Austria"}, {"state": "Vorarlberg", "country": "Austria"}]
+    # use key "city" only for Vienna else "state", see top of file for list of regions, special case for eastern tyrol
+    #e.g. region_graphs = [{"state": "Tyrol", "country": "Austria"}, {"state": "Vorarlberg", "country": "Austria"}]
 
-    # name of dfs in stops_dfs folder before "_{day}" e.g. "vor_obb"
-    #region = ["vor_obb"]
-    #region = ["vvt_vmobil_obb"]
+    # name of dfs in stops_dfs folder before "_{day}", will be concatenated to one string, e.g. "vor_obb"
+    #region_stops = ["vor", "obb"]
 
-    # batch calculation for multiple days
-    places = PLACES
-    regions = ["all_regions"]
-    days = [20240210, 20240410, 20240610, 20240810, 20241010, 20241210, 20241023, 20241030]
+    region_graphs = None #all regions
+    region_stops = None #all regions
+    
+    week_days = [20240131, 20240215, 20240315, 20240415, 20240515, 20240614, 20240715, 20240814, 20240916, 20241015, 20241115, 20241213]
+    existing_solution = [20241023, 20241030]
+    weekends_holidays = [20240210, 20240414, 20240608, 20240811, 20241012, 20241208]
+    days = week_days + existing_solution + weekends_holidays
 
-    # places = [{"state": "Tyrol", "country": "Austria"}]
-    # regions = ["vvt_vmobil_obb"]
-    # days = [20240528]
+    days = [20240529]
 
-    #print(create_name(places))
-
-    run_calculation(places, regions, days, edge_snapping="partial")
+    run_calculation(region_graphs, region_stops, days, edge_snapping="partial")

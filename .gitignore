@@ -160,12 +160,13 @@ cython_debug/
 .DS_Store
 
 # Data
-/data/in/2024*
-/data/in/GTFS*
-/data/in/osmnx_graphs/
+/data/in/gtfs/*
+/data/in/oerok_solution/*
+/data/in/osmnx_graphs/*
+/data/in/population_data/*
 
-/data/out/isochrones_gpkg/
-#/data/out/stop_dfs/
+/data/out/isochrones/*
+/data/out/stops/*
 
 #src
 /src/test*
