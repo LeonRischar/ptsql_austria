@@ -15,18 +15,22 @@ This project contains the code to calculate the Public Transport Service Quality
 ```
 ptsql_austria/
 ├── data/
-│   ├── in/   # contains the original data in GTFS format for all of Austria (the data is NOT provided in this repo, refer to the dataset description for more information)
-        └── osmnx_graphs/  # folder to store the osmnx street network graphs used for isochrone calculation
+│   ├── in/
+│       ├── gtfs/  # folder to store the GTFS data for each region in subfolders
+│       ├── oerok_solution/  # folder to store the oerok solution for for comparison with created solution
+        ├── osmnx_graphs/  # folder to store the osmnx street network graphs used for isochrone calculation
+        └── population_data/  # folder to store the population data for each region
 │   └── out/
-│       ├── figs/  # folder to store figures of the isochrones
-│       ├── isochrones_gpkg/  # folder to store the created isochrones in geopackage format
-│       └── stop_dfs/  # folder to store the created stop dataframes 
+│       ├── evaluation/  # folder to store the evaluation results as dfs of area and population
+│       ├── figs/  # folder to store figures of plots and isochrone examples
+│       ├── isochrones/  # folder to store the created isochrones in geopackage format
+│       └── stops/  # folder to store the created stop category dataframes 
 ├── src/      # contains the code to calculate the PTSQL
 └── docs/     # contains more detailed documentation
 ```
 
 # Dataset
-The data used is from https://data.mobilitaetsverbuende.at/en/data-sets. Specifically, the GTFS data for the year 2024 is used. It is necessary to download the datasets for each region (almost like states) separately. 
+The data used is from https://data.mobilitaetsverbuende.at/en/data-sets. Specifically, the GTFS data for the year 2024 is used. It is necessary to download the datasets for each region (almost like states/provinces) separately. 
 The region are:
 - Eastern Region (VOR) contains Vienna, Lower Austria and Burgenland
 - Upper Austria (OOEV) contains Upper Austria except Linz
@@ -60,7 +64,8 @@ For requirements to use QGIS, see `usage_qgis.md` in the `/docs/` folder.
 ## How to use QGIS
 For a description of how to use QGIS with the created files, please refer to the `usage_qgis.md` file in the `/docs/` folder.
 
-# License
+
+# Licenses
 Please note that there are different licenses for different parts of this project:
 - Input data: **Data License – Mobilitätsverbünde Österreich OG (License Agreement_DE_EN_DBP_v1.1)**, see `/data/in/`
 - Output data: **Creative Commons Attribution 4.0 International** for everything in `/data/out/`

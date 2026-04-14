@@ -2,11 +2,27 @@ import numpy as np
 
 # configs and constants
 
+# Options for isochrone calculation, these are the most useful to change
+# the other configs can be changed as well, but probably need more adaptations by the user
+
 # days used for evaluation
 WEEKDAYS = [20240131, 20240215, 20240315, 20240415, 20240515, 20240614, 20240715, 20240814, 20240916, 20241015, 20241115, 20241213]
 OEROK_DAYS = [20241023, 20241030]
 WEEKENDS = [20240210, 20240414, 20240608, 20240811, 20241012, 20241208]
 ALL_DAYS = WEEKDAYS + OEROK_DAYS + WEEKENDS
+
+# other days to plot with oreok solution for comparison, must be from already specified days
+OTHER_DAYS = [20241012, 20241015]
+
+# snap stop locations to nearest edge
+# options: "all", "partial", "none" - default: "partial"
+EDGE_SNAPPING = "partial" 
+
+# max distance in meters to use nearest node otherwise use edge snapping, only used if EDGE_SNAPPING is "partial"
+NEAREST_NODE_THRESHOLD = 50 # default: 50
+
+# create buffer around isochrones to smoothen, increases isochrone size, in meters
+BUFFER = 25 # default: 25
 
 # paths for input data
 PATH_IN_GTFS = "../data/in/gtfs/"
@@ -19,6 +35,14 @@ PATH_OUT_ISOCHRONES = "../data/out/isochrones/"
 PATH_OUT_STOPS = "../data/out/stops/"
 PATH_OUT_EVALUATION = "../data/out/evaluation/"
 PATH_OUT_FIGS = "../data/out/figs/"
+
+# name of population file to use for evaluation, should be placed in PATH_IN_POPULATION or subfolders
+# default: "Eurostat_Census-GRID_2021_V2.2/ESTAT_Census_2021_V2.gpkg"
+POPULATION_FILE = "Eurostat_Census-GRID_2021_V2.2/ESTAT_Census_2021_V2.gpkg"
+
+# name scheme of oerok solution files, should be placed in PATH_IN_OEROK or subfolders
+# {} will be replaced by day1 and day2 in prepare_oerok_data function
+OEROK_NAME_SCHEME = "OeV_Gueteklassen_Polygone_{}.shp" # default: "OeV_Gueteklassen_Polygone_{}.shp"
 
 # exact names of GTFS folders in PATH_IN_GTFS for each region
 GTFS_REGIONS = {"vor": "20241214-0617_gtfs_vor_2024", #vienna, lower austria, burgenland
@@ -63,8 +87,6 @@ TABLE_ROMAN = np.array([
                                     # X = empty, i.e. worst case
 ])
 
-# network type for osmnx
-NETWORK_TYPE = "walk"
 
 GRAPH_REGIONS = [{"city": "Vienna", "country": "Austria"},
                 {"state": "Lower Austria", "country": "Austria"},
@@ -77,14 +99,21 @@ GRAPH_REGIONS = [{"city": "Vienna", "country": "Austria"},
                 {"county": "Lienz", "state": "Tyrol", "country": "Austria"}, # special case for eastern tyrol
                 {"state": "Vorarlberg", "country": "Austria"}]
 
-SOURCE_CRS = "epsg:4326" # crs of input data e.g. GTFS
-TARGET_CRS = "epsg:31287" # crs of output data e.g. isochrones and stops dfs
+# crs of input data e.g. GTFS
+SOURCE_CRS = "epsg:4326" # default: "epsg:4326"
+
+# crs of output data e.g. isochrones and stops dfs
+TARGET_CRS = "epsg:31287" # default: "epsg:31287"
+
+# network type for osmnx
+NETWORK_TYPE = "walk" # default: "walk"
 
 # distances and colors used for isochrones
 DISTANCES = [300, 500, 750, 1000, 1250]
 PTSQL_COLORS = ["#E42421", "#E95153", "#E63C1E", "#F29668", "#34672B", "#87C281", "#959595", "none"]
 PTSQL_COLORS_DICT = {"A":"#E42421", "B":"#E95153", "C":"#E63C1E", "D":"#F29668", "E":"#34672B", "F":"#87C281", "G":"#959595", "H":"none"}
 
+# translate rank and interval to PTSQL color
 PTSQL_COLOR_TABLE = [[0,0,1,2,3], # I
                     [0,1,2,3,4], # II
                     [1,2,3,4,5], # III

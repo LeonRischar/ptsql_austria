@@ -162,7 +162,8 @@ def load_stops(region: str = "all_regions", day: int = 20240528, crs: str = TARG
     return df
 
 
-def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=25, nearest_node_threshold=50, edge_snapping:str="partial") -> gpd.GeoDataFrame:
+def calculate_isochrones(G, stops, distances=DISTANCES, crs=TARGET_CRS, buffer=BUFFER, 
+                         nearest_node_threshold=NEAREST_NODE_THRESHOLD, edge_snapping:str=EDGE_SNAPPING) -> gpd.GeoDataFrame:
     """
     Calculate the isochrones for the specified distances.
     
@@ -314,7 +315,7 @@ def reachable_nodes_from_snapped_point(G, xs, ys, max_dist=DISTANCES[-1]) -> lis
 
     return lengths_for_all_nodes
 
-def run_calculation(region_graphs, region_stops, days, edge_snapping="partial"):
+def run_isochrone_calculation(region_graphs, region_stops, days, edge_snapping=EDGE_SNAPPING):
     """
     Calculate the isochrones for all the specified places and regions each day seprately in parallel.
     Can also be used for a single day.
@@ -332,7 +333,7 @@ def run_calculation(region_graphs, region_stops, days, edge_snapping="partial"):
 
     name = create_name(region_graphs, edge_snapping)
 
-    print(f"Started calculation")
+    print(f"Running isochrone calculation for {len(days)} days and {len(region_graphs)} graphs")
     start_time = time.time()
 
     print(f"Loading graphs for {name}")
@@ -362,24 +363,6 @@ def run_calculation(region_graphs, region_stops, days, edge_snapping="partial"):
         print(f"Saved isochrones to {PATH_OUT_ISOCHRONES}{n}.gpkg ..... {save_time - isochrones_time:.3f}s")
         print("--------------")
 
-
-    #print(f"Finished calculation in {save_time - start_time:.3f}s\n\n")
-
-    # TODO: add plot creation?? with higher resolution??
-    # print(f"Drawing isochrones plot", end="\r")
-    # fig, ax = draw_graph(graph, gdf=gdf, return_fig=True)
-    # draw_time = time.time()
-    # print(f"{"Drawn isochrones plot"} ..... {draw_time - isochrones_time:.3f}s")
-    
-    # print(f"Saving isochrones to {PATH_ISOCHRONES_OUT}{name}.gpkg and figure to {PATH_FIGS_OUT}{name}.png", end="\r")
-    # isochrones.to_file(f"{PATH_ISOCHRONES_OUT}{name}.gpkg", layer="isochrones", driver="GPKG")
-    # fig.savefig(f"{PATH_FIGS_OUT}{name}.png")
-    # save_time = time.time()
-    # print(f"Saved isochrones to {PATH_ISOCHRONES_OUT}{name}.gpkg and figure to {PATH_FIGS_OUT}{name}.png ..... {save_time - draw_time:.3f}s")
-
-    # plt.figure(fig)
-    # plt.show()
-
 if __name__ == "__main__":
     # region name for street network graph, e.g. {"city": "Vienna", "country": "Austria"}, 
     # use key "city" only for Vienna else "state", see top of file for list of regions, special case for eastern tyrol
@@ -390,12 +373,5 @@ if __name__ == "__main__":
 
     region_graphs = None #all regions
     region_stops = None #all regions
-    
-    week_days = [20240131, 20240215, 20240315, 20240415, 20240515, 20240614, 20240715, 20240814, 20240916, 20241015, 20241115, 20241213]
-    existing_solution = [20241023, 20241030]
-    weekends_holidays = [20240210, 20240414, 20240608, 20240811, 20241012, 20241208]
-    days = week_days + existing_solution + weekends_holidays
 
-    days = [20240529]
-
-    run_calculation(region_graphs, region_stops, days, edge_snapping="partial")
+    run_isochrone_calculation(region_graphs, region_stops, ALL_DAYS)

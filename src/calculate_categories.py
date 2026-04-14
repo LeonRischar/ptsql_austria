@@ -58,7 +58,7 @@ def detect_route_type(trip_name, route_type):
     else:
         return ROUTE_TYPE_TRANSLATION[route_type]
 
-def calculate_rank_interval_for_region(state_name: str, selected_day: int) -> pd.DataFrame:
+def calculate_rank_interval_for_single_region(state_name: str, selected_day: int) -> pd.DataFrame:
     """
     Calculate the rank and interval for the specified region and day.
 
@@ -162,7 +162,6 @@ def calculate_rank_interval_for_all_regions(selected_day: int, selected_regions:
     """
     Calculate the category (rank, interval) for all station in the regions for the selected_day.
     If selected_regions is None, calculate for all regions.
-    Saves the results to a csv file in '/data/out/'.
 
     Parameters:
         selected_day (int): The day for which the categories should be calculated in the format YYYYMMDD.
@@ -182,7 +181,7 @@ def calculate_rank_interval_for_all_regions(selected_day: int, selected_regions:
         print(f"{state_name}", end="\r")
         start_time = time.time()
         
-        state_dfs.append(calculate_rank_interval_for_region(state_name, selected_day))
+        state_dfs.append(calculate_rank_interval_for_single_region(state_name, selected_day))
 
         elapsed = time.time() - start_time
         total_time += elapsed
@@ -213,22 +212,25 @@ def calculate_rank_interval_for_all_regions(selected_day: int, selected_regions:
     all_regions.to_csv(PATH_OUT_STOPS + f_name, index=False)
     print(f"\nSaved to {PATH_OUT_STOPS + f_name}")
 
-if __name__ == "__main__":
-    week_days = [20240131, 20240215, 20240315, 20240415, 20240515, 20240614, 20240715, 20240814, 20240916, 20241015, 20241115, 20241213]
-    existing_solution = [20241023, 20241030]
-    weekends_holidays = [20240210, 20240414, 20240608, 20240811, 20241012, 20241208]
-    regions = None #means all
 
-    days = week_days + existing_solution + weekends_holidays
+def run_category_calculation(regions: list[str] = None, days: list[int] = ALL_DAYS):
+    """
+    Run the calculation of rank and interval for all specified regions and days.
+    """
+    if regions is None:
+        regions = list(GTFS_REGIONS.keys())
 
-    # change in August because 15th is holiday
-    # days = [20240814]
-    days = [20240529]
+    print(f"Running category calculation for {len(regions)} regions and {len(days)} days")
 
-    # batch calculation for multiple days
+    # run calculation for each day for all selected regions as one
     for d in days:
         print(f"Calculating categories for day {d}")
 
         calculate_rank_interval_for_all_regions(d, regions)
 
         print("--------------\n")
+
+
+if __name__ == "__main__":
+    # default: calculate for all regions and all days (from config.py)
+    run_category_calculation()

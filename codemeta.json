@@ -20,7 +20,8 @@
     "description": "This software can be used to calculate the Public Transport Service Quality Levels (PTSQL) for Austria.",
     "keywords": [
         "ptsql",
-        "austria"
+        "austria",
+        "gtfs"
     ],
     "license": [
         "https://spdx.org/licenses/CC-BY-4.0",

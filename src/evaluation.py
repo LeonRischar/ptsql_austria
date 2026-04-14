@@ -408,21 +408,19 @@ def statistics(df_area, df_population, week_days=WEEKDAYS, weekends=WEEKENDS):
     print(f"Calculated simple statistics for {len(WEEKDAYS + WEEKENDS)} days ... {time.time() - start_time:.3f}s")
 
     return df_final
-    
-    
-if __name__ == "__main__":
+
+def run_evaluation():
     # run evaluation pipeline
 
-    print("Starting evaluation pipeline")
-
-    population_file = "Eurostat_Census-GRID_2021_V2.2/ESTAT_Census_2021_V2.gpkg"
-    population = load_population(population_file)
+    print("Running evaluation pipeline")
+    population = load_population(POPULATION_FILE)
 
     # calculate areas and population for all days
     df_areas, df_populations = create_area_df(ALL_DAYS, population)
 
     # calculate areas and population for existing solution from oerok
-    df_areas_oerok, df_populations_oerok = prepare_oerok_data(day1="OeV_Gueteklassen_Polygone_20241023.shp", day2="OeV_Gueteklassen_Polygone_20241030.shp", population=population)
+    df_areas_oerok, df_populations_oerok = prepare_oerok_data(day1=OEROK_NAME_SCHEME.format(OEROK_DAYS[0]),
+                                                             day2=OEROK_NAME_SCHEME.format(OEROK_DAYS[1]), population=population)
 
     df_stats = statistics(df_areas, df_populations)
 
@@ -467,11 +465,11 @@ if __name__ == "__main__":
 
     custom_labels = ["", "", "OEROK", "", "OEROK", ""]
 
-    p7 = create_time_series_plot(df_a, days=OEROK_DAYS + [20241012, 20241015], type="area", day_names=True, plot_size='auto',
+    p7 = create_time_series_plot(df_a, days=OEROK_DAYS + OTHER_DAYS, type="area", day_names=True, plot_size='auto',
                                 bar_labels=True, groupby='day', custom_labels=custom_labels,
                                 custom_title="Comparison of OEROK area solution to other days")  
 
-    p8 = create_time_series_plot(df_p, days=OEROK_DAYS + [20241012, 20241015], type="population", day_names=True, plot_size='auto',
+    p8 = create_time_series_plot(df_p, days=OEROK_DAYS + OTHER_DAYS, type="population", day_names=True, plot_size='auto',
                                 bar_labels=True, groupby='day', custom_labels=custom_labels,
                                 custom_title="Comparison of OEROK population solution to other days")
 
@@ -486,3 +484,5 @@ if __name__ == "__main__":
     print(f"Created and saved evaluation plots to {PATH_OUT_FIGS} ... {time.time() - start_time:.3f}s")
 
 
+if __name__ == "__main__":
+    run_evaluation()
