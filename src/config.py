@@ -22,6 +22,7 @@ EDGE_SNAPPING = "partial"
 NEAREST_NODE_THRESHOLD = 50 # default: 50
 
 # create buffer around isochrones to smoothen, increases isochrone size, in meters
+# might be better to reduce???
 BUFFER = 25 # default: 25
 
 # paths for input data
@@ -113,7 +114,7 @@ DISTANCES = [300, 500, 750, 1000, 1250]
 PTSQL_COLORS = ["#E42421", "#E95153", "#E63C1E", "#F29668", "#34672B", "#87C281", "#959595", "none"]
 PTSQL_COLORS_DICT = {"A":"#E42421", "B":"#E95153", "C":"#E63C1E", "D":"#F29668", "E":"#34672B", "F":"#87C281", "G":"#959595", "H":"none"}
 
-# translate rank and interval to PTSQL color
+# translate rank and interval to PTSQL color index
 PTSQL_COLOR_TABLE = [[0,0,1,2,3], # I
                     [0,1,2,3,4], # II
                     [1,2,3,4,5], # III
@@ -124,6 +125,7 @@ PTSQL_COLOR_TABLE = [[0,0,1,2,3], # I
                     [6,6,-1,-1,-1]] # VIII
 
 # boundaries of Austria in EPSG:3035 in meters for directions north (N) and east (E)
+# used to extract only relevant cells from population data
 MIN_E = 3850000
 MAX_E = 4850000
 MIN_N = 2250000

@@ -51,7 +51,7 @@ def detect_route_type(trip_name, route_type):
     # TODO: also consider route_short/long_name ??? 
     if route_type == 2 and not pd.isna(trip_name):
         trips_name = trip_name.lower()
-        if any(x in trips_name for x in ["rj", "rjx", "nj", "en", "ic", "ec", "ice", "ecb", "rex", "wb", "rgj", "cjx" ]): #fernverkehr
+        if any(x in trips_name for x in ["rj", "rjx", "nj", "en", "ic", "ec", "ice", "ecb", "rex", "wb", "rgj", "cjx" ]): #fernverkehr, long distance trains
             return 0
         else:
             return 1
@@ -132,13 +132,12 @@ def calculate_rank_interval_for_single_region(state_name: str, selected_day: int
     stops_parents['stop_id'] = stops_parents['stop_id'].apply(lambda x: x if x[0] != 'P' else x[1:])
     stops_filtered = stops_filtered[stops_filtered['stop_id'].str.startswith('at') | stops_filtered['stop_id'].str.startswith('obb')]
     stops_filtered = stops_filtered[~stops_filtered['stop_id'].isin(stops_parents['stop_id'])].drop_duplicates(subset=['stop_id'], keep='first')
-    # TODO: maybe filter out special stations e.g. obb_CP_80854 Wattens Sammelpunkt Bahnhofstraße MPREIS or Pat:42:99979_HoB
     stops_filtered_final = pd.concat([stops_parents, stops_filtered])
 
     stop_times_filtered = stop_times.copy()
     stop_times_filtered = stop_times_filtered[stop_times_filtered['departure_time'].between('06:00:00', '20:00:00')]
     stop_times_filtered = stop_times_filtered[stop_times_filtered['stop_id'].str.startswith('at')]
-    # TODO: check if Parent station is in stop_times and keep those
+
     stop_times_filtered['stop_id'] = stop_times_filtered['stop_id'].astype(str).apply(
         lambda x: (
             re.match(r'^((?:[^:]*:){3})', x).group(1).rstrip(':')
@@ -160,7 +159,7 @@ def calculate_rank_interval_for_single_region(state_name: str, selected_day: int
 
 def calculate_rank_interval_for_all_regions(selected_day: int, selected_regions: list[str] = None):
     """
-    Calculate the category (rank, interval) for all station in the regions for the selected_day.
+    Calculate the category (rank, interval) for all stations in the regions for the selected_day.
     If selected_regions is None, calculate for all regions.
 
     Parameters:

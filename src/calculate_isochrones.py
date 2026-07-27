@@ -61,7 +61,7 @@ def create_name(place, snapping="partial"):
 def draw_graph(G, ns=0, nc="none", gdf=None, return_fig=False):
     """
     Draw the graph with the specified node sizes and node colors.
-    Optionally add a geodataframe to the plot if provided.
+    Optionally add a geodataframe for isochrones to the plot if provided.
     
     Parameters:
         G (nx.Graph): The graph to draw.
@@ -134,7 +134,7 @@ def load_graph(places: list[dict] | dict, network_type: str = NETWORK_TYPE, crs:
     print("Combining and projecting graphs")
     g = nx.compose_all(graphs)
 
-    # NOTE: most time spent on projection
+    # NOTE: most time spent on projection, could be skipped if all graphs in pkl files are already projected to correct crs
     g = ox.projection.project_graph(g, to_crs=crs)
 
     return g
@@ -147,7 +147,7 @@ def load_stops(region: str = "all_regions", day: int = 20240528, crs: str = TARG
 
     Parameters:
         region (str): A string of places names to load the stops for. Defaults to "all_regions".
-        day (int): The day to load the stops for. Defaults to 20240528.
+        day (int): The day to load the stops for. Defaults to 20240528 (used during debugging).
         crs (str): The CRS to project the stops to. Defaults to target_crs.
 
     Returns:

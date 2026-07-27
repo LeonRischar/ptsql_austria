@@ -32,6 +32,8 @@ def load_population(file):
 
     Parameters
         file (str): name of file in in/population/ folder, or path to file (starting from in/population/) if in subfolder or in different folder
+    Returns
+        population (GeoPackage)
     """
     print(f"Loading population from {file}", end="\r")
     start_time = time.time()
@@ -135,10 +137,16 @@ def create_area_df(days, population = None):
         df_areas.insert(0, "date", days)
         df_populations.insert(0, "date", days)
 
+        df_areas['total'] = df_areas.iloc[:,1:].sum(axis=1)
+        df_populations['total'] = df_populations.iloc[:,1:].sum(axis=1)
+
         return df_areas, df_populations
     else:
         df_areas = pd.DataFrame(area_dicts)
         df_areas.insert(0, "date", days)
+
+        df_areas['total'] = df_areas.iloc[:,1:].sum(axis=1)
+
         return df_areas
     
 def create_evaluation_plot(df, day1, day2, type='area', matrix=False, note_text=False, percent=False):
@@ -197,7 +205,9 @@ def create_evaluation_plot(df, day1, day2, type='area', matrix=False, note_text=
 
     return plot
 
-def create_time_series_plot(df, days=[], type='area', day_names=True, plot_size: str|tuple = 'auto', bar_labels=False, groupby=None, custom_labels=None, custom_title=None, rotate_bar_labels=False):
+def create_time_series_plot(df, days=[], type='area', day_names=True, plot_size: str|tuple = 'auto', 
+                            bar_labels=False, groupby=None, custom_labels=None, title=None, rotate_bar_labels=False,
+                            show_totals=True):
     """
     Creates a time series plot from a dataframe for the given days.
 
@@ -210,8 +220,9 @@ def create_time_series_plot(df, days=[], type='area', day_names=True, plot_size:
         bar_labels (bool): Whether to show labels in the bar segments. Default is False.
         groupby (str): Place closer to each other bars by this criterea. Either 'month' or 'day'. Default is None.
         custom_labels (list): Custom labels added to the date tick labels. If provided, must match the number of x ticks. Default is None.
-        custom_title (str): Custom title for the plot. Default is None.
+        title (str): Custom title for the plot. Default is None.
         rotate_bar_labels (bool): Whether to rotate the bar labels. Default is False.
+        show_totals (bool): Whether to show total values at top of bars. Default is True.
 
     Returns:
         matplotlib.axes.Axes: Axes object containing the plot.
@@ -229,32 +240,24 @@ def create_time_series_plot(df, days=[], type='area', day_names=True, plot_size:
     df_filtered = df[df.date.isin(days)].sort_values(by='date')
     dates = list(pd.to_datetime(df_filtered.date, format='ISO8601'))
 
+    # group bars by month or day or not (none)
     x = []
     pos = 0
-    prev = None
-    for d in dates:
-        current = None
-        if groupby == 'month':
-            current = d.month
-        elif groupby == 'day':
-            current = d.day
-        else:
+    if groupby == None:
+        for _ in dates:
             pos += 1
             x.append(pos)
-            continue
-
-        if prev is not None and current != prev :
-            pos += 1.2   # month gap
-        else:
-            pos += 0.7   # normal gap
-        x.append(pos)
-        prev = current
+    else:
+        key = (lambda d: d.month) if groupby == "month" else (lambda d: d.day)
+        prev = None
+        for d in dates:
+            pos += 1.2 if (prev is not None and key(d) != prev) else 0.7
+            x.append(pos)
+            prev = key(d)
 
     df_filtered['x_pos'] = x
 
-    value_cols = [c for c in df_filtered.columns if c not in ['date', 'month', 'x_pos']]
-
-    #ax = df_filtered.plot(kind='bar', x='x_pos', y=value_cols, stacked=True, color=PTSQL_COLORS, figsize=(x_size, y_size))
+    value_cols = [c for c in df_filtered.columns if c not in ['date', 'month', 'x_pos', 'total']]
 
     fig, ax = plt.subplots(figsize=(x_size, y_size))
 
@@ -263,52 +266,57 @@ def create_time_series_plot(df, days=[], type='area', day_names=True, plot_size:
     for col, color in zip(value_cols, PTSQL_COLORS_DICT.values()):
         values = df_filtered[col].values
 
-        # print(value_cols)
-        # print(values)
-        # print(bottom)
-
-        # print("values contains None:", any(v is None for v in values))
-        # print("bottom contains None:", any(b is None for b in bottom))
-
         ax.bar(df_filtered['x_pos'], values, bottom=bottom, width=0.6, color=color, label=col)
         bottom += values
 
     if day_names:
-        #dates = list(pd.to_datetime(df_filtered.date, format='ISO8601'))
-        day_names = [d.strftime("%A") for d in dates]
-        x_ticks = [str(d.date()) + "\n" + n for d, n in zip(dates, day_names)]
+        day_strings = [d.strftime("%a") for d in dates]
+        dates = [str(d.strftime("%d-%b")) for d in dates]
+        x_ticks = [d + ", " + n for d, n in zip(dates, day_strings)]
         if custom_labels is not None:
             x_ticks = [l + "\n" + x for x, l in zip(x_ticks, custom_labels)]
         ax.set_xticks(x, x_ticks, rotation=45)
     else:
-        x_ticks = [str(d.date()) for d in dates]
+        x_ticks = [str(d.strftime("%d-%b-%Y")) for d in dates]
         if custom_labels is not None:
             x_ticks = [l + "\n" + x for x, l in zip(x_ticks, custom_labels)]
         ax.set_xticks(x, x_ticks, rotation=45)
 
-    if bar_labels:
-        fig.canvas.draw()
-        offset_text = ax.yaxis.get_offset_text().get_text()
+    fig.canvas.draw()
+    offset_text = ax.yaxis.get_offset_text().get_text()
 
+    if bar_labels:
         for c in ax.containers:
             # Optional: if the segment is small or 0, customize the labels
             labels_texts = [int(v.get_height()) if v.get_height() > 500 else '' for v in c]
 
             if offset_text.startswith('1e'):
-                labels_texts = ["{:.2e}".format(v).replace('+0','') if v != '' else '' for v in labels_texts]  
+                scale = float(offset_text) 
+                labels_texts = [f"{(v/scale)}"[:5] if v != '' else '' for v in labels_texts]  
             
             # remove the labels parameter if it's not needed for customized labels
             ax.bar_label(c, labels=labels_texts, label_type='center', rotation=45 if rotate_bar_labels else 0)
 
+    if show_totals:
+        x_positions = df_filtered['x_pos'].to_numpy()
+        totals = df_filtered['total'].to_numpy()
+
+        if offset_text.startswith('1e'):
+            scale = float(offset_text)
+            total_labels = [f"{(v/scale)}"[:5] for v in totals]  
+        else:
+            total_labels = [str(int(t)) for t in totals]
+
+        for x_i, y_i, txt in zip(x_positions, totals, total_labels):
+            ax.text(x_i, y_i, txt, ha='center', va='bottom', fontsize=8, color='dimgrey')
+
     ax.set_axisbelow(True)
-    ax.grid(axis='y', color='gray', linestyle='--')
+    ax.grid(axis='y', color='silver', linestyle='--')
     plt.ylabel('Area [km²]' if type == 'area' else 'Population [#]')
     plt.legend(loc="center left", bbox_to_anchor=(1,0.6), title="PTSQL")
 
-    if custom_title is not None:
-        plt.title(custom_title)
-    else:
-        plt.title(f'Time Series plot for {type}')
+    if title:
+        plt.title(title)
 
     return fig
 
@@ -320,8 +328,10 @@ def prepare_oerok_data(day1, day2, population=None):
     Parameters:
         day1 (str): Name of Shapefile for day 1 in oerok folder
         day2 (str): Name of Shapefile for day 2 in oerok folder
-        population (str, optional): 
+        population (str, optional): population GeoPackage to estimate the covered population from.
 
+    Returns:
+        areas (pd.DataFrame), optional: population (pd.DataFrame)
     """
 
     print(f"Loading and calculated oerok data for {day1} and {day2}", end="\r")
@@ -355,12 +365,28 @@ def prepare_oerok_data(day1, day2, population=None):
     print(f"Loaded and calculated oerok data for {day1} and {day2} ... {time.time() - start_time:.3f}s")
 
     if population is not None:
+        df_existing_areas['total'] = df_existing_areas.iloc[:,1:].sum(axis=1)
+        df_existing_populations['total'] = df_existing_populations.iloc[:,1:].sum(axis=1)
+
         return df_existing_areas, df_existing_populations
     else:
+        df_existing_areas['total'] = df_existing_areas.iloc[:,1:].sum(axis=1)
         return df_existing_areas
 
 
 def statistics(df_area, df_population, week_days=WEEKDAYS, weekends=WEEKENDS):
+    """
+    Calculates some basic statistics about the data such as avg, min, max, std, for weekdays, weekends
+
+    Parameters:
+        df_area (pd.DataFrame): df with area data
+        df_population (pd.DataFrame): df with population data
+        week_days (list[int]): list of week_days to use
+        weekends (list[int]): list of weekend days to use
+
+    Returns:
+        df_final (pd.DataFrame)
+    """
 
     print(f"Calculating simple statistics for {len(WEEKDAYS + WEEKENDS)} days", end="\r")
     start_time = time.time()
@@ -410,8 +436,9 @@ def statistics(df_area, df_population, week_days=WEEKDAYS, weekends=WEEKENDS):
     return df_final
 
 def run_evaluation():
-    # run evaluation pipeline
-
+    """
+    Runs evaluation pipeline.
+    """
     print("Running evaluation pipeline")
     population = load_population(POPULATION_FILE)
 
@@ -444,11 +471,11 @@ def run_evaluation():
     # create evaluation plots
     p3 = create_time_series_plot(df_areas, days=WEEKDAYS + WEEKENDS, type="area", day_names=True, 
                              plot_size='auto', bar_labels=True, groupby='month', rotate_bar_labels=True, 
-                             custom_title="Areas of PTSQLs for several days in 2024")
+                             title="Areas of PTSQLs for several days in 2024")
 
     p4 = create_time_series_plot(df_populations, days=WEEKDAYS + WEEKENDS, type="population", day_names=True, 
                                 plot_size='auto', bar_labels=True, groupby='month', rotate_bar_labels=True,
-                                custom_title="Population of PTSQLs for several days in 2024")
+                                title="Population of PTSQLs for several days in 2024")
     
     df_a = pd.concat([df_areas_oerok, df_areas], axis=0)
     df_p = pd.concat([df_populations_oerok, df_populations], axis=0)
@@ -457,21 +484,21 @@ def run_evaluation():
 
     p5 = create_time_series_plot(df_a, days=OEROK_DAYS, type="area", day_names=True, plot_size='auto',
                                 bar_labels=True, groupby='day', custom_labels=custom_labels,
-                                custom_title="Comparison of OEROK area solution to own solution")  
+                                title="Comparison of OEROK area solution to own solution")  
  
     p6 = create_time_series_plot(df_p, days=OEROK_DAYS, type="population", day_names=True, plot_size='auto',
                                 bar_labels=True, groupby='day', custom_labels=custom_labels,
-                                custom_title="Comparison of OEROK population solution to own solution")
+                                title="Comparison of OEROK population solution to own solution")
 
     custom_labels = ["", "", "OEROK", "", "OEROK", ""]
 
     p7 = create_time_series_plot(df_a, days=OEROK_DAYS + OTHER_DAYS, type="area", day_names=True, plot_size='auto',
                                 bar_labels=True, groupby='day', custom_labels=custom_labels,
-                                custom_title="Comparison of OEROK area solution to other days")  
+                                title="Comparison of OEROK area solution to other days")  
 
     p8 = create_time_series_plot(df_p, days=OEROK_DAYS + OTHER_DAYS, type="population", day_names=True, plot_size='auto',
                                 bar_labels=True, groupby='day', custom_labels=custom_labels,
-                                custom_title="Comparison of OEROK population solution to other days")
+                                title="Comparison of OEROK population solution to other days")
 
     # save plots
     p3.savefig(f"{PATH_OUT_FIGS}area.png", bbox_inches='tight')
