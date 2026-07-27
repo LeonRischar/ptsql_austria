@@ -166,7 +166,9 @@ cython_debug/
 /data/in/population_data/*
 
 /data/out/isochrones/*
+!/data/out/isochrones/**/.gitkeep
 /data/out/stops/*
+!/data/out/stops/**/.gitkeep
 
 #src
 /src/test*
