@@ -161,6 +161,7 @@ cython_debug/
 
 # Data
 /data/in/gtfs/*
+!/data/in/gtfs/License*
 /data/in/oerok_solution/*
 /data/in/osmnx_graphs/*
 /data/in/population_data/*

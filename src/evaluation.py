@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import shapely
+from matplotlib.patches import Rectangle
 
 from config import *
 
@@ -206,8 +207,8 @@ def create_evaluation_plot(df, day1, day2, type='area', matrix=False, note_text=
     return plot
 
 def create_time_series_plot(df, days=[], type='area', day_names=True, plot_size: str|tuple = 'auto', 
-                            bar_labels=False, groupby=None, custom_labels=None, title=None, rotate_bar_labels=False,
-                            show_totals=True):
+                            bar_labels=False, percentages=False, groupby=None, custom_labels=None, title=None, rotate_bar_labels=False,
+                            show_totals=True, avg_lines=False, highlight=[]):
     """
     Creates a time series plot from a dataframe for the given days.
 
@@ -218,11 +219,14 @@ def create_time_series_plot(df, days=[], type='area', day_names=True, plot_size:
         day_names (bool): Whether to show day names on the x-axis.
         plot_size (tuple or str): Size of the plot. If 'auto', the plot size is automatically adjusted. Else provide a tuple of (width, height). Default is 'auto'.
         bar_labels (bool): Whether to show labels in the bar segments. Default is False.
+        percentages (bool): Whether to show bar labels as percentages. Default is False.
         groupby (str): Place closer to each other bars by this criterea. Either 'month' or 'day'. Default is None.
         custom_labels (list): Custom labels added to the date tick labels. If provided, must match the number of x ticks. Default is None.
         title (str): Custom title for the plot. Default is None.
         rotate_bar_labels (bool): Whether to rotate the bar labels. Default is False.
         show_totals (bool): Whether to show total values at top of bars. Default is True.
+        avg_lines (bool): Whether to show hlines for avg values per category. Default is False.
+        highlight (list): Bar indices to highlight. Default is [].
 
     Returns:
         matplotlib.axes.Axes: Axes object containing the plot.
@@ -285,40 +289,78 @@ def create_time_series_plot(df, days=[], type='area', day_names=True, plot_size:
     fig.canvas.draw()
     offset_text = ax.yaxis.get_offset_text().get_text()
 
+    totals = df_filtered['total'].to_numpy()
+
     if bar_labels:
         for c in ax.containers:
-            # Optional: if the segment is small or 0, customize the labels
-            labels_texts = [int(v.get_height()) if v.get_height() > 500 else '' for v in c]
+            labels = [int(v.get_height()) for v in c]
+            if percentages:
+                labels_texts = np.round(labels/totals*100, 1)
+                
+            else:
+                # Optional: if the segment is small or 0, customize the labels
+                #labels_texts = [int(v.get_height()) if v.get_height() > 500 else '' for v in c]
+                labels_texts = labels
 
-            if offset_text.startswith('1e'):
-                scale = float(offset_text) 
-                labels_texts = [f"{(v/scale)}"[:5] if v != '' else '' for v in labels_texts]  
+                if offset_text.startswith('1e'):
+                    scale = float(offset_text) 
+                    #labels_texts = [f"{(v/scale)}"[:5] if v != '' else '' for v in labels_texts]  
+                    labels_texts = [f"{(v/scale)}"[:5] for v in labels_texts]  
+
+            m = np.mean(labels)
+            fs = 0 if m < 200 else (6 if m < 300 else (8 if np.mean(labels) < 500 else 10))
             
             # remove the labels parameter if it's not needed for customized labels
-            ax.bar_label(c, labels=labels_texts, label_type='center', rotation=45 if rotate_bar_labels else 0)
+            ax.bar_label(c, labels=labels_texts, label_type='center', rotation=45 if rotate_bar_labels else 0, fontsize=fs)
 
     if show_totals:
         x_positions = df_filtered['x_pos'].to_numpy()
-        totals = df_filtered['total'].to_numpy()
 
         if offset_text.startswith('1e'):
             scale = float(offset_text)
             total_labels = [f"{(v/scale)}"[:5] for v in totals]  
         else:
-            total_labels = [str(int(t)) for t in totals]
+            total_labels = [f"{int(t):,}" for t in totals]
 
         for x_i, y_i, txt in zip(x_positions, totals, total_labels):
             ax.text(x_i, y_i, txt, ha='center', va='bottom', fontsize=8, color='dimgrey')
 
+    if len(highlight) != 0:
+        for i in highlight:
+            xi = df_filtered[df_filtered['date'] == i]['x_pos'].iloc[0]
+            t = df_filtered[df_filtered['date'] == i]['total'].iloc[0]
+            rect = Rectangle(
+                (xi - 0.3, 0),   # left, bottom
+                0.6,                  # width
+                t,                # height
+                facecolor="none",
+                edgecolor="red",
+                linewidth=2.0
+                )
+            ax.add_patch(rect)
+
+    # must call legend before possible reordering
+    plt.legend(loc="center left", bbox_to_anchor=(1,0.6), title="PTSQL")
+
+    if avg_lines: # before bars to plot legend in correct order
+        classes = ['A','B','C','D','E','F','G']
+        averages = np.cumsum(df_filtered[classes].mean(axis=0).to_numpy())
+        for i, x in enumerate(averages):
+            plt.axhline(x, color=PTSQL_COLORS[i], label=f"avg {classes[i]}", zorder=0)
+
+        handles, labels = plt.gca().get_legend_handles_labels()
+        l = len(classes)
+        plt.legend((handles[l:] + handles[:l]), (labels[l:] + labels[:l]), loc="center left", bbox_to_anchor=(1,0.6), title="PTSQL" ) 
+
     ax.set_axisbelow(True)
     ax.grid(axis='y', color='silver', linestyle='--')
-    plt.ylabel('Area [km²]' if type == 'area' else 'Population [#]')
-    plt.legend(loc="center left", bbox_to_anchor=(1,0.6), title="PTSQL")
+    plt.ylabel('Covered Area [km²]' if type == 'area' else 'Covered Population [#]')
+    #plt.legend(loc="center left", bbox_to_anchor=(1,0.6), title="PTSQL")
 
     if title:
         plt.title(title)
 
-    return fig
+    return fig, ax
 
 
 def prepare_oerok_data(day1, day2, population=None):
