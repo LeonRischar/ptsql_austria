@@ -1,0 +1,7 @@
+Data Usage - Disclaimer
+
+The Austrian Conference on Spatial Planning (ÖROK) publishes this data jointly with the Federal Ministry for Climate Action, Environment, Energy, Mobility, Innovation and Technology (BMK) to improve the coordination of urban development and public transport infrastructure. The developed standardized system of public transport service classes can be used as an analysis, assessment, planning, and evaluation tool.
+
+The providers assume no liability for the accuracy, timeliness, or completeness of the content on this or other websites. The information provided does not constitute legal advice, and no legal claims can be derived from its use. Therefore, the presentation of specific public transport service classes never entitles the provider to an actual public transport service. Furthermore, the providers reserve the right to supplement, amend, or delete the data at any time. While the providers strive to minimize technical disruptions, they cannot guarantee or assume liability for uninterrupted access to the information or for any other disruptions.
+
+(Translated to English from German Original: https://www.oerok.gv.at/raum/themen/raumordnung-und-mobilitaet)

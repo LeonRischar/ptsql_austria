@@ -162,9 +162,15 @@ cython_debug/
 # Data
 /data/in/gtfs/*
 !/data/in/gtfs/License*
+
 /data/in/oerok_solution/*
+!/data/in/oerok_solution/Disclaimer*
+
 /data/in/osmnx_graphs/*
+!/data/in/osmnx_graphs/License*
+
 /data/in/population_data/*
+!/data/in/population_data/License*
 
 /data/out/isochrones/*
 !/data/out/isochrones/**/.gitkeep
