@@ -17,7 +17,9 @@
     ],
     "codeRepository": "https://github.com/LeonRischar/ptsql_austria",
     "dateCreated": "2025-11-14",
+    "dateModified": "2026-06-20",
     "description": "This software can be used to calculate the Public Transport Service Quality Levels (PTSQL) for Austria.",
+    "downloadUrl": "https://github.com/LeonRischar/ptsql_austria",
     "keywords": [
         "ptsql",
         "austria",
@@ -28,7 +30,8 @@
         "https://spdx.org/licenses/CC-BY-4.0",
         "https://spdx.org/licenses/MIT"
     ],
-    "name": "ptsql_austria_calculator",
+    "name": "ptsql_austria",
     "programmingLanguage": "Python",
-    "developmentStatus": "active"
+    "version": "1.0.0",
+    "developmentStatus": "inactive"
 }

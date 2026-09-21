@@ -21,7 +21,7 @@ ptsql_austria/
 └── docs/                    # contains more detailed documentation
 ```
 
-# Dataset
+# Input Data
 To use the code and replicate the results it is necessary to download and add the required data in the respective folders as indicated in the `Structure` section. 
 
 ### GTFS
@@ -53,6 +53,9 @@ To do the population estimation, download the data from https://ec.europa.eu/eur
 The grid version used in this project is "Version 2021 (22 January 2025)". 
 Move the folder "Eurostat_Census-GRID_2021_V2.2" as a whole, not the individual files inside.
 
+# Ouput Data
+
+Due to size, the produced stop-category and isochrone files from folders `/data/out/stops` and `/data/out/isochrones` respectively, are not provided in this repo. To validate the data either the code of this repo can be used to recreate it or the data can be found on the TU Wien Research Data Repository under the following DOI: [10.48436/55chh-mx830](https://doi.org/10.48436/55chh-mx830)
 
 # Requirements
 See `requirements.txt` for the required python packages.  
@@ -69,23 +72,6 @@ The `requirements.txt` was generated using `pipreqs` with the following command:
 4. Run the jupyter notebook `demo_evaluation.ipynb` to create the isochrones. Or use the file `evaluation.py`. NOTE: to run the full evaluation, you need the OEROK solution and population grid ready in their respective folder.
 5. Configure the notebooks or file parameters as needed. E.g. regions, day, etc.
 
-# Licenses and Attributions
-Please note that there are different licenses for different parts of this project:
-- Input data in `data/in/`: 
-  - `gtfs`: 
-    - Data source: Mobilitätsverbünde Österreich OG - data.moblitaetsverbuende.at
-    - License: Mobilitätsverbünde Österreich OG - License Agreement_DE_EN_DBP_v1.1, see `data/in/gtfs` for license pdf
-  - `oerok_solution`: 
-    - Data source: AustriaTech - https://www.mobilitydata.gv.at/en/daten/%C3%B6v-g%C3%BCteklassen
-    - Data usage - Disclaimer: https://www.oerok.gv.at/raum/themen/raumordnung-und-mobilitaet
-  - `osmnx_graphs`: 
-    - Data Source: OpenStreetMap - https://www.openstreetmap.org/copyright/en
-    - License: Open Data Commons Open Database License (ODbL) - https://opendatacommons.org/licenses/odbl/summary/
-  - `population_data`: 
-    - Data Source: Eurostat - https://ec.europa.eu/eurostat/web/gisco/geodata/population-distribution/population-grids
-    - License: CC-BY 4.0 - https://creativecommons.org/licenses/by/4.0/deed.en
-- Output data: **Creative Commons Attribution 4.0 International** for everything in `/data/out/`
-- Source code: **MIT License** for everything in `/src/` and documentation in `/docs/` as well as the rest of the project
 
 # Licenses and Attributions
 
